@@ -17,7 +17,7 @@ fn main() -> Result<()> {
     if delay_html.contains("Vlak je redovit") {
         println!("The train is running on time");
     } else {
-        let late_regex = Regex::new("Kasni . min.")?;
+        let late_regex = Regex::new("Kasni . min")?;
 
         let capture: i32 = late_regex
             .captures(&delay_html)
