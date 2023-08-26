@@ -1,6 +1,7 @@
 use std::fs;
 
 use anyhow::Result;
+use itertools::Itertools;
 use regex::Regex;
 use thiserror::Error;
 
@@ -24,7 +25,7 @@ fn main() -> Result<()> {
             .to_owned()
             .trim()
             .split(" ")
-            .collect::<Vec<_>>()[1]
+            .collect_vec()[1]
             .to_owned()
             .parse()?;
 
