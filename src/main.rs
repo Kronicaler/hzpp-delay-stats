@@ -7,7 +7,7 @@ use opentelemetry_stdout::MetricsExporter;
 use regex::Regex;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, instrument, span, warn, Level};
 use tracing_opentelemetry::MetricsLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -29,6 +29,8 @@ fn expensive_work() -> &'static str {
     more_expensive_work();
 
     even_more_expensive_work();
+
+    thread::sleep(Duration::from_millis(25));
 
     "success"
 }
@@ -74,32 +76,61 @@ async fn main() -> Result<()> {
         .with(opentelemetry_metrics)
         .try_init()?;
 
+    get_delay()?;
+
     expensive_work();
 
-    let routes: Vec<Route> =
-        serde_json::from_str(&fs::read_to_string("example_responses/routes.json")?)?;
+    return Ok(());
+}
 
-    let delay_html = fs::read_to_string("example_responses/delay.html")?;
+#[instrument]
+fn get_delay() -> Result<()> {
+    {
+        let span = span!(Level::TRACE, "getting routes");
+        let _enter = span.enter();
 
-    if delay_html.contains("Vlak je redovit") {
-        info!("The train is running on time");
-    } else {
-        let late_regex = Regex::new("Kasni . min")?;
+        let routes: Vec<Route> =
+            serde_json::from_str(&fs::read_to_string("example_responses/routes.json")?)?;
 
-        let capture: i32 = late_regex
-            .captures(&delay_html)
-            .ok_or(HzppError::CouldntFindLateness)?[0]
-            .to_owned()
-            .trim()
-            .split(" ")
-            .collect_vec()[1]
-            .to_owned()
-            .parse()?;
-
-        info!("The train is {capture} minutes late");
+        info!("Got {} routes", routes.len());
     }
 
-    return Ok(());
+    thread::sleep(Duration::from_millis(25));
+
+    {
+        let span = span!(Level::TRACE, "getting delay");
+        let _enter = span.enter();
+
+        let delay_html = fs::read_to_string("example_responses/delay.html")?;
+
+        if delay_html.contains("Vlak je redovit") {
+            info!("The train is running on time");
+        } else {
+            let late_regex = Regex::new("Kasni . min")?;
+
+            let minutes_late: i32 = late_regex
+                .captures(&delay_html)
+                .ok_or(HzppError::CouldntFindLateness)?[0]
+                .to_owned()
+                .trim()
+                .split(" ")
+                .collect_vec()[1]
+                .to_owned()
+                .parse()?;
+
+            thread::sleep(Duration::from_millis(25));
+            info!("The train is {} minutes late", minutes_late);
+        }
+    }
+
+    sending_delays_to_db();
+
+    Ok(())
+}
+
+#[instrument]
+fn sending_delays_to_db() {
+    thread::sleep(Duration::from_millis(25));
 }
 
 #[derive(Error, Debug)]
