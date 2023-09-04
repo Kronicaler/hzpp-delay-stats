@@ -16,37 +16,6 @@ use crate::model::route::Route;
 
 mod model;
 
-#[instrument]
-fn expensive_work() -> &'static str {
-    info!(
-        task = "tracing_setup",
-        result = "success",
-        "tracing successfully set up",
-    );
-
-    thread::sleep(Duration::from_millis(25));
-
-    more_expensive_work();
-
-    even_more_expensive_work();
-
-    thread::sleep(Duration::from_millis(25));
-
-    "success"
-}
-
-#[instrument]
-fn more_expensive_work() {
-    thread::sleep(Duration::from_millis(25));
-}
-
-#[instrument]
-fn even_more_expensive_work() {
-    info!("starting even more work");
-    thread::sleep(Duration::from_millis(25));
-    info!("ending even more work");
-}
-
 fn init_meter_provider() -> MeterProvider {
     let exporter = MetricsExporter::default();
     let reader = PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio).build();
@@ -61,9 +30,6 @@ fn init_meter_provider() -> MeterProvider {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Install an otel pipeline with a simple span processor that exports data one at a time when
-    // spans end. See the `install_batch` option on each exporter's pipeline builder to see how to
-    // export in batches.
     let tracer = opentelemetry_jaeger::new_agent_pipeline()
         .with_service_name("HZPP_delays")
         .install_simple()?;
@@ -81,8 +47,6 @@ async fn main() -> Result<()> {
         let _enter = span.enter();
 
         get_delay()?;
-
-        expensive_work();
     }
     thread::sleep(Duration::from_millis(25));
 
