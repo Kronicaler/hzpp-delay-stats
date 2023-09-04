@@ -76,9 +76,15 @@ async fn main() -> Result<()> {
         .with(opentelemetry_metrics)
         .try_init()?;
 
-    get_delay()?;
+    {
+        let span = span!(Level::TRACE, "Root");
+        let _enter = span.enter();
 
-    expensive_work();
+        get_delay()?;
+
+        expensive_work();
+    }
+    thread::sleep(Duration::from_millis(25));
 
     return Ok(());
 }
@@ -93,12 +99,11 @@ fn get_delay() -> Result<()> {
             serde_json::from_str(&fs::read_to_string("example_responses/routes.json")?)?;
 
         info!("Got {} routes", routes.len());
+
+        thread::sleep(Duration::from_millis(25));
     }
-
-    thread::sleep(Duration::from_millis(25));
-
     {
-        let span = span!(Level::TRACE, "getting delay");
+        let span = span!(Level::TRACE, "extracting delay from html");
         let _enter = span.enter();
 
         let delay_html = fs::read_to_string("example_responses/delay.html")?;
