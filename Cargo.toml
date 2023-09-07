@@ -19,3 +19,4 @@ tracing = "0.1"
 tracing-opentelemetry = { version = "0.21", features = ["metrics"] }
 tracing-subscriber = "0.3"
 opentelemetry-jaeger = " 0.19"
+tokio-cron-scheduler = "0.9"
