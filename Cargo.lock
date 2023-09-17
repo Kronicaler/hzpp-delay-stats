@@ -138,7 +138,9 @@ checksum = "defd4e7873dbddba6c7c91e199c7fcb946abc4a6a4ac3195400bcfb01b5de877"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "wasm-bindgen",
  "windows-targets",
 ]
 
@@ -448,6 +450,7 @@ name = "hzpp_delays"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "itertools",
  "opentelemetry",
  "opentelemetry-jaeger",

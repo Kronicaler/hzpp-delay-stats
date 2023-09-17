@@ -1,4 +1,5 @@
 use anyhow::Result;
+use background_services::route_fetcher::get_routes;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::metrics::{MeterProvider, PeriodicReader};
@@ -15,6 +16,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use crate::model::route::Route;
 
 mod model;
+mod background_services;
 
 fn init_meter_provider() -> MeterProvider {
     let exporter = MetricsExporter::default();
@@ -46,7 +48,7 @@ async fn main() -> Result<()> {
         let span = span!(Level::TRACE, "Root");
         let _enter = span.enter();
 
-        get_delay()?;
+        get_routes().await?;
     }
     thread::sleep(Duration::from_millis(25));
 
