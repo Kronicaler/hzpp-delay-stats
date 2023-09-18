@@ -1,56 +1,62 @@
 use anyhow::Result;
-use background_services::route_fetcher::get_routes;
+use dotenvy::dotenv;
 use itertools::Itertools;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
-use opentelemetry_sdk::metrics::{MeterProvider, PeriodicReader};
+use opentelemetry_otlp::{ExportConfig, TonicConfig};
+use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
-use opentelemetry_stdout::MetricsExporter;
 use regex::Regex;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
 use tracing::{error, info, instrument, span, warn, Level};
-use tracing_opentelemetry::MetricsLayer;
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Registry};
 
+use crate::background_services::route_fetcher::get_routes;
 use crate::model::route::Route;
 
-mod model;
 mod background_services;
-
-fn init_meter_provider() -> MeterProvider {
-    let exporter = MetricsExporter::default();
-    let reader = PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio).build();
-    MeterProvider::builder()
-        .with_reader(reader)
-        .with_resource(Resource::new(vec![KeyValue::new(
-            "service.name",
-            "metrics-basic-example",
-        )]))
-        .build()
-}
+mod model;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let tracer = opentelemetry_jaeger::new_agent_pipeline()
-        .with_service_name("HZPP_delays")
-        .install_simple()?;
-    let opentelemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    _ = dotenv();
 
-    let opentelemetry_metrics = MetricsLayer::new(init_meter_provider());
+    let provider = TracerProvider::builder()
+        .with_simple_exporter(
+            opentelemetry_otlp::SpanExporter::new_tonic(
+                ExportConfig::default(),
+                TonicConfig::default(),
+            )
+            .unwrap(),
+        )
+        .with_config(
+            Config::default().with_resource(Resource::new(vec![KeyValue::new(
+                "service.name",
+                "HZPP_delays",
+            )])),
+        )
+        .build();
 
-    tracing_subscriber::registry()
-        .with(opentelemetry)
-        .with(opentelemetry_metrics)
-        .try_init()?;
+    let tracer = provider.tracer("HZPP_delays");
 
-    {
-        let span = span!(Level::TRACE, "Root");
-        let _enter = span.enter();
+    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
 
-        get_routes().await?;
-    }
-    thread::sleep(Duration::from_millis(25));
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+
+    let _subscriber = Registry::default()
+        .with(telemetry)
+        .with(env_filter)
+        .set_default();
+
+    get_routes().await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(250)).await;
 
     return Ok(());
 }

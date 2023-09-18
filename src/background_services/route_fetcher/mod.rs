@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Result};
+use opentelemetry::global::{shutdown_tracer_provider, shutdown_logger_provider};
 use tracing::info;
 
 use crate::model::route::Route;
 
+#[tracing::instrument(level = "info")]
 pub async fn get_routes() -> Result<()> {
     info!("fetching routes");
 

@@ -13,11 +13,14 @@ itertools = "0.11"
 reqwest = "0.11"
 tokio = { version = "1.32", features = ["macros", "rt-multi-thread"] }
 opentelemetry = "0.20"
-opentelemetry-stdout = { version = "0.1.0", features = ["trace", "metrics"] }
-opentelemetry_sdk = { version = "0.20", features = ["metrics", "rt-tokio"] }
+opentelemetry_sdk = { version = "0.20", features = ["rt-tokio"] }
 tracing = "0.1"
-tracing-opentelemetry = { version = "0.21", features = ["metrics"] }
-tracing-subscriber = "0.3"
-opentelemetry-jaeger = " 0.19"
+tracing-opentelemetry = { version = "0.21" }
+tracing-subscriber = { version = "0.3", features = [
+    "tracing-log",
+    "env-filter",
+] }
+opentelemetry-otlp = "0.13"
 tokio-cron-scheduler = "0.9"
 chrono = "0.4"
+dotenvy = "0.15.7"
