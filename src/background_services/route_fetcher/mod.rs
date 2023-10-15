@@ -1,10 +1,9 @@
-use anyhow::{anyhow, Result};
-use opentelemetry::global::{shutdown_tracer_provider, shutdown_logger_provider};
+use anyhow::{bail, Result};
 use tracing::info;
 
 use crate::model::route::Route;
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument]
 pub async fn get_routes() -> Result<()> {
     info!("fetching routes");
 
@@ -15,11 +14,11 @@ pub async fn get_routes() -> Result<()> {
     let response = reqwest::get(&request).await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!(
+        bail!(
             "Error when fetching routes\nrequest:{}\nresponse:{:?}",
             request,
             response
-        ));
+        );
     }
 
     let routes: Vec<Route> = serde_json::from_str(&response.text().await?)?;

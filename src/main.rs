@@ -1,3 +1,5 @@
+#![feature(error_generic_member_access)]
+
 use anyhow::Result;
 use dotenvy::dotenv;
 use itertools::Itertools;
@@ -7,6 +9,7 @@ use opentelemetry_otlp::{ExportConfig, TonicConfig};
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
+use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
 use tracing::{error, info, instrument, span, warn, Level};
@@ -54,6 +57,7 @@ async fn main() -> Result<()> {
         .with(env_filter)
         .set_default();
 
+    _ = get_delay();
     get_routes().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -61,14 +65,20 @@ async fn main() -> Result<()> {
     return Ok(());
 }
 
-#[instrument]
-fn get_delay() -> Result<()> {
+#[instrument(err)]
+fn get_delay() -> Result<(), HzppError> {
     {
         let span = span!(Level::TRACE, "getting routes");
         let _enter = span.enter();
 
+        let routes_file = "documentation/example_responses/routes.json";
         let routes: Vec<Route> =
-            serde_json::from_str(&fs::read_to_string("example_responses/routes.json")?)?;
+            serde_json::from_str(&fs::read_to_string(routes_file).map_err(|e| {
+                HzppError::FileReadingError {
+                    source: e,
+                    file: routes_file.to_string(),
+                }
+            })?)?;
 
         info!("Got {} routes", routes.len());
 
@@ -78,16 +88,21 @@ fn get_delay() -> Result<()> {
         let span = span!(Level::TRACE, "extracting delay from html");
         let _enter = span.enter();
 
-        let delay_html = fs::read_to_string("example_responses/delay.html")?;
+        let delay_file = "example_responses/delay.html";
+        let delay_html =
+            fs::read_to_string(delay_file).map_err(|e| HzppError::FileReadingError {
+                source: e,
+                file: delay_file.to_string(),
+            })?;
 
         if delay_html.contains("Vlak je redovit") {
             info!("The train is running on time");
         } else {
-            let late_regex = Regex::new("Kasni . min")?;
+            let late_regex = Regex::new("Kasni . min").unwrap();
 
             let minutes_late: i32 = late_regex
                 .captures(&delay_html)
-                .ok_or(HzppError::CouldntFindLateness)?[0]
+                .ok_or_else(|| HzppError::CouldntFindLateness(delay_html.clone()))?[0]
                 .to_owned()
                 .trim()
                 .split(" ")
@@ -112,6 +127,16 @@ fn sending_delays_to_db() {
 
 #[derive(Error, Debug)]
 pub enum HzppError {
-    #[error("Couldn't find how late the train was in the returned html file")]
-    CouldntFindLateness,
+    #[error("Couldn't find how late the train was in the returned html file: {0}")]
+    CouldntFindLateness(String),
+    #[error("Error reading the file {file} | {source}")]
+    FileReadingError {
+        #[backtrace]
+        source: std::io::Error,
+        file: String,
+    },
+    #[error("Error parsing a file")]
+    FileParsingError(#[from] serde_json::Error),
+    #[error("Error parsing the delay duration")]
+    DelayParsingError(#[from] ParseIntError),
 }
