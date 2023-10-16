@@ -57,12 +57,27 @@ async fn main() -> Result<()> {
         .with(env_filter)
         .set_default();
 
-    _ = get_delay();
-    get_routes().await.unwrap();
+    let routes = get_routes().await.unwrap();
+    if let Err(e) = save_routes(&routes) {
+        error!("{} | {}", e, e.backtrace());
+        return Err(e);
+    }
+    if let Err(e) = send_routes_to_delay_checker(routes) {
+        error!("{} | {}", e, e.backtrace());
+        return Err(e);
+    }
 
     tokio::time::sleep(Duration::from_millis(250)).await;
 
     return Ok(());
+}
+
+fn send_routes_to_delay_checker(routes: Vec<Route>) -> Result<()> {
+    Ok(())
+}
+
+fn save_routes(routes: &Vec<Route>) -> Result<()> {
+    Ok(())
 }
 
 #[instrument(err)]

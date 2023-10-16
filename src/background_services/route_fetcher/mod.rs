@@ -4,7 +4,7 @@ use tracing::info;
 use crate::model::route::Route;
 
 #[tracing::instrument]
-pub async fn get_routes() -> Result<()> {
+pub async fn get_routes() -> Result<Vec<Route>> {
     info!("fetching routes");
 
     let request = format!(
@@ -25,5 +25,5 @@ pub async fn get_routes() -> Result<()> {
 
     info!("got {} routes", routes.len());
 
-    Ok(())
+    Ok(routes)
 }
