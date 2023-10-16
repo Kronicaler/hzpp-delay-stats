@@ -1,6 +1,6 @@
 #![feature(error_generic_member_access)]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use dotenvy::dotenv;
 use itertools::Itertools;
 use opentelemetry::trace::TracerProvider as _;
@@ -9,7 +9,9 @@ use opentelemetry_otlp::{ExportConfig, TonicConfig};
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
+use std::fs::File;
 use std::num::ParseIntError;
+use std::sync::Arc;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
 use tracing::{error, info, instrument, span, warn, Level};
@@ -52,12 +54,32 @@ async fn main() -> Result<()> {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
+    let stdout_log = tracing_subscriber::fmt::layer().pretty();
+
+    // A layer that logs events to a file.
+    let file = File::create("debug.log");
+    let file = match file {
+        Ok(file) => file,
+        Err(error) => panic!("Error: {:?}", error),
+    };
+    let debug_log = tracing_subscriber::fmt::layer()
+        .with_writer(Arc::new(file))
+        .with_ansi(false)
+        .pretty();
+
     let _subscriber = Registry::default()
         .with(telemetry)
+        .with(stdout_log)
+        .with(debug_log)
         .with(env_filter)
         .set_default();
 
-    let routes = get_routes().await.unwrap();
+    let Ok(routes) = get_routes().await else {
+        error!("Error getting routes");
+
+        tokio::time::sleep(Duration::from_millis(5000)).await;
+        return Err(anyhow!("Error getting routes"));
+    };
     if let Err(e) = save_routes(&routes) {
         error!("{} | {}", e, e.backtrace());
         return Err(e);
