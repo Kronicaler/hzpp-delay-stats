@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
 
     let tracer = provider.tracer("HZPP_delays");
 
-    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
@@ -62,23 +62,25 @@ async fn main() -> Result<()> {
         Ok(file) => file,
         Err(error) => panic!("Error: {:?}", error),
     };
-    let debug_log = tracing_subscriber::fmt::layer()
+    let file_log = tracing_subscriber::fmt::layer()
         .with_writer(Arc::new(file))
         .with_ansi(false)
         .pretty();
 
     let _subscriber = Registry::default()
-        .with(telemetry)
+        .with(telemetry_layer)
         .with(stdout_log)
-        .with(debug_log)
+        .with(file_log)
         .with(env_filter)
         .set_default();
 
-    let Ok(routes) = get_routes().await else {
-        error!("Error getting routes");
+    let routes = match get_routes().await {
+        Ok(routes) => routes,
+        Err(e) => {
+            error!("Error getting routes {}", e);
 
-        tokio::time::sleep(Duration::from_millis(5000)).await;
-        return Err(anyhow!("Error getting routes"));
+            return Err(anyhow!("Error getting routes"));
+        }
     };
     if let Err(e) = save_routes(&routes) {
         error!("{} | {}", e, e.backtrace());

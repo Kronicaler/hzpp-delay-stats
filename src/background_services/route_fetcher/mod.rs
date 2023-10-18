@@ -1,7 +1,7 @@
-use std::backtrace::{self, Backtrace};
+use std::backtrace::Backtrace;
 
 use thiserror::Error;
-use tracing::{info, info_span, Instrument};
+use tracing::{error, info, info_span, Instrument};
 
 use crate::model::route::Route;
 
@@ -15,18 +15,16 @@ pub async fn get_routes() -> Result<Vec<Route>, GetRoutesError> {
         .instrument(info_span!("Fetching routes"))
         .await?;
 
-    if response.status().is_success() {
-        return Err(GetRoutesError::InvalidResponseError {
+    if !response.status().is_success() {
+        let err = Err(GetRoutesError::InvalidResponseError {
             body: response
                 .text()
                 .await
-                .unwrap_or_else(|e| format!("Couldn't read body | {}", e))
-                .chars()
-                .into_iter()
-                .take(2000)
-                .collect::<String>(),
+                .unwrap_or_else(|e| format!("Couldn't read body | {}", e)),
             backtrace: Backtrace::capture(),
         });
+        error!("{:?}", err);
+        return err;
     }
 
     let routes: Vec<Route> = serde_json::from_str(
@@ -49,7 +47,7 @@ pub enum GetRoutesError {
     InvalidResponseError {
         body: String,
         #[backtrace]
-        backtrace: Backtrace, // TODO capture proper backtrace. this just returns line no. of function declaration
+        backtrace: Backtrace,
     },
     #[error("Error parsing a file")]
     FileParsingError(#[from] serde_json::Error),
