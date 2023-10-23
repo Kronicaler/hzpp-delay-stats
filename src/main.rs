@@ -1,6 +1,6 @@
 #![feature(error_generic_member_access)]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use dotenvy::dotenv;
 use itertools::Itertools;
 use opentelemetry::trace::TracerProvider as _;
@@ -9,7 +9,9 @@ use opentelemetry_otlp::{ExportConfig, TonicConfig};
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
+use std::fs::File;
 use std::num::ParseIntError;
+use std::sync::Arc;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
 use tracing::{error, info, instrument, span, warn, Level};
@@ -46,23 +48,60 @@ async fn main() -> Result<()> {
 
     let tracer = provider.tracer("HZPP_delays");
 
-    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
+    let stdout_log = tracing_subscriber::fmt::layer().pretty();
+
+    // A layer that logs events to a file.
+    let file = File::create("debug.log");
+    let file = match file {
+        Ok(file) => file,
+        Err(error) => panic!("Error: {:?}", error),
+    };
+    let file_log = tracing_subscriber::fmt::layer()
+        .with_writer(Arc::new(file))
+        .with_ansi(false)
+        .pretty();
+
     let _subscriber = Registry::default()
-        .with(telemetry)
+        .with(telemetry_layer)
+        .with(stdout_log)
+        .with(file_log)
         .with(env_filter)
         .set_default();
 
-    _ = get_delay();
-    get_routes().await.unwrap();
+    let routes = match get_routes().await {
+        Ok(routes) => routes,
+        Err(e) => {
+            error!("Error getting routes {}", e);
+
+            return Err(anyhow!("Error getting routes"));
+        }
+    };
+    if let Err(e) = save_routes(&routes) {
+        error!("{} | {}", e, e.backtrace());
+        return Err(e);
+    }
+    if let Err(e) = send_routes_to_delay_checker(routes) {
+        error!("{} | {}", e, e.backtrace());
+        return Err(e);
+    }
 
     tokio::time::sleep(Duration::from_millis(250)).await;
 
     return Ok(());
+}
+
+fn send_routes_to_delay_checker(routes: Vec<Route>) -> Result<()> {
+    Ok(())
+}
+
+fn save_routes(routes: &Vec<Route>) -> Result<()> {
+    Ok(())
 }
 
 #[instrument(err)]
