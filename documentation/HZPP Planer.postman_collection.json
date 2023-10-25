@@ -1,0 +1,189 @@
+{
+	"info": {
+		"_postman_id": "1377a46d-36a7-461c-8458-90eba8188227",
+		"name": "HZPP Planer",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "12697898"
+	},
+	"item": [
+		{
+			"name": "get routes",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date=20230823",
+					"protocol": "https",
+					"host": [
+						"josipsalkovic",
+						"com"
+					],
+					"path": [
+						"hzpp",
+						"planer",
+						"v3",
+						"getRoutes.php"
+					],
+					"query": [
+						{
+							"key": "date",
+							"value": "20230823"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get stops",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://josipsalkovic.com/hzpp/planer/v3/getStops.php",
+					"protocol": "https",
+					"host": [
+						"josipsalkovic",
+						"com"
+					],
+					"path": [
+						"hzpp",
+						"planer",
+						"v3",
+						"getStops.php"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get delay",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoenBwLXBsYW5lciIsImlhdCI6MTY3NDEzNzM3NH0.a6FzxGKyUfHzLVuGP242MFWF6EspvJl1LTHwEVeMIsY",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://traindelay.hzpp.hr/train/delay?trainId=2107",
+					"protocol": "https",
+					"host": [
+						"traindelay",
+						"hzpp",
+						"hr"
+					],
+					"path": [
+						"train",
+						"delay"
+					],
+					"query": [
+						{
+							"key": "trainId",
+							"value": "2107"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get composition",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoenBwLXBsYW5lciIsImlhdCI6MTY3NDEzNzM3NH0.a6FzxGKyUfHzLVuGP242MFWF6EspvJl1LTHwEVeMIsY",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://traindelay.hzpp.hr/train/composition?trainId=8078",
+					"protocol": "https",
+					"host": [
+						"traindelay",
+						"hzpp",
+						"hr"
+					],
+					"path": [
+						"train",
+						"composition"
+					],
+					"query": [
+						{
+							"key": "trainId",
+							"value": "8078"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get connection links",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://josipsalkovic.com/hzpp/planer/v3/getConnectionLinks.php",
+					"protocol": "https",
+					"host": [
+						"josipsalkovic",
+						"com"
+					],
+					"path": [
+						"hzpp",
+						"planer",
+						"v3",
+						"getConnectionLinks.php"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get compositions",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "https://josipsalkovic.com/hzpp/planer/v3/getCompositions.php",
+					"protocol": "https",
+					"host": [
+						"josipsalkovic",
+						"com"
+					],
+					"path": [
+						"hzpp",
+						"planer",
+						"v3",
+						"getCompositions.php"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
