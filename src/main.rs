@@ -69,16 +69,16 @@ async fn main() -> Result<()> {
     let routes = match get_routes().await {
         Ok(routes) => routes,
         Err(e) => {
-            error!("Error getting routes {} | {}", e, e.backtrace());
+            error!("Error getting routes {} \n {}", e, e.backtrace());
             bail!(e);
         }
     };
     if let Err(e) = save_routes(&routes) {
-        error!("{} | {}", e, e.backtrace());
+        error!("Error saving routes {} \n {}", e, e.backtrace());
         bail!(e);
     }
     if let Err(e) = send_routes_to_delay_checker(routes) {
-        error!("{} | {}", e, e.backtrace());
+        error!("Error sending routes to the delay checker {} \n {}", e, e.backtrace());
         bail!(e);
     }
 
