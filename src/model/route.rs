@@ -4,7 +4,7 @@ use super::{calendar::Calendar, stop::Stop};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Route {
-    route_id: String,
+    route_i: String,
     route_number: i32,
     route_src: String,
     route_desc: String,

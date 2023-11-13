@@ -1,17 +1,15 @@
-#![feature(error_generic_member_access)]
+//#![feature(error_generic_member_access)]
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use dotenvy::dotenv;
 use itertools::Itertools;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
-use opentelemetry_otlp::{ExportConfig, TonicConfig};
+use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
-use std::fs::File;
 use std::num::ParseIntError;
-use std::sync::Arc;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
 use tracing::{error, info, instrument, span, warn, Level};
@@ -30,14 +28,10 @@ mod model;
 async fn main() -> Result<()> {
     _ = dotenv();
 
+    let span_exporter = new_exporter().tonic().build_span_exporter().unwrap();
+
     let provider = TracerProvider::builder()
-        .with_simple_exporter(
-            opentelemetry_otlp::SpanExporter::new_tonic(
-                ExportConfig::default(),
-                TonicConfig::default(),
-            )
-            .unwrap(),
-        )
+        .with_simple_exporter(span_exporter)
         .with_config(
             Config::default().with_resource(Resource::new(vec![KeyValue::new(
                 "service.name",
@@ -56,14 +50,12 @@ async fn main() -> Result<()> {
 
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
 
-    // A layer that logs events to a file.
-    let file = File::create("debug.log");
-    let file = match file {
-        Ok(file) => file,
-        Err(error) => panic!("Error: {:?}", error),
-    };
+    let appender = tracing_appender::rolling::daily("./logs", "hzpp_delays.log");
+    let (non_blocking_appender, _guard) = tracing_appender::non_blocking(appender);
+
+    // A layer that logs events to rolling files.
     let file_log = tracing_subscriber::fmt::layer()
-        .with_writer(Arc::new(file))
+        .with_writer(non_blocking_appender)
         .with_ansi(false)
         .pretty();
 
@@ -77,20 +69,20 @@ async fn main() -> Result<()> {
     let routes = match get_routes().await {
         Ok(routes) => routes,
         Err(e) => {
-            error!("Error getting routes {}", e);
-
-            return Err(anyhow!("Error getting routes"));
+            error!("Error getting routes {} | {}", e, e.backtrace());
+            bail!(e);
         }
     };
     if let Err(e) = save_routes(&routes) {
         error!("{} | {}", e, e.backtrace());
-        return Err(e);
+        bail!(e);
     }
     if let Err(e) = send_routes_to_delay_checker(routes) {
         error!("{} | {}", e, e.backtrace());
-        return Err(e);
+        bail!(e);
     }
 
+    // Let the subscriber finish writing its logs
     tokio::time::sleep(Duration::from_millis(250)).await;
 
     return Ok(());
@@ -170,7 +162,7 @@ pub enum HzppError {
     CouldntFindLateness(String),
     #[error("Error reading the file {file} | {source}")]
     FileReadingError {
-        #[backtrace]
+        #[source]
         source: std::io::Error,
         file: String,
     },
