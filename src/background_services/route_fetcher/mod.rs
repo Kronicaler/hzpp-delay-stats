@@ -29,14 +29,14 @@ pub async fn get_routes() -> Result<Vec<Route>, GetRoutesError> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum GetRoutesError {
-    #[error("Error fetching the routes \n {}", backtrace)]
+    #[error("error fetching the routes \n{} \n{}", source, backtrace)]
     HttpRequestError {
         #[from]
         source: reqwest::Error,
         backtrace: Backtrace,
     },
 
-    #[error("Error parsing the routes \n {}", backtrace)]
+    #[error("error parsing the routes \n{} \n{}", source, backtrace)]
     FileParsingError {
         #[from]
         source: serde_json::Error,

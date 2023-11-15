@@ -1,6 +1,6 @@
 #![feature(error_generic_member_access)]
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use dotenvy::dotenv;
 use itertools::Itertools;
 use opentelemetry::trace::TracerProvider as _;
@@ -9,10 +9,10 @@ use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
-use std::error::Error;
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::{error, info, instrument, span, warn, Level};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -29,7 +29,7 @@ mod model;
 async fn main() -> Result<()> {
     _ = dotenv();
 
-    let span_exporter = new_exporter().tonic().build_span_exporter().unwrap();
+    let span_exporter = new_exporter().tonic().build_span_exporter()?;
 
     let provider = TracerProvider::builder()
         .with_simple_exporter(span_exporter)
@@ -65,30 +65,41 @@ async fn main() -> Result<()> {
         .with(stdout_log)
         .with(file_log)
         .with(env_filter)
-        .set_default();
+        .init();
 
-    let routes = get_routes().await?;
+    let sched = JobScheduler::new().await?;
 
-    if let Err(e) = save_routes(&routes) {
-        error!("Error saving routes {} \n {}", e, e.backtrace());
-        bail!(e);
+    sched
+        .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
+            Box::pin(async move {
+                _ = fetch_routes_job().await;
+            })
+        })?)
+        .await?;
+
+    sched.start().await?;
+
+    loop {
+        tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
     }
-    if let Err(e) = send_routes_to_delay_checker(routes) {
-        error!("Error sending routes to the delay checker {} \n {}", e, e.backtrace());
-        bail!(e);
-    }
-
-    // Let the subscriber finish writing its logs
-    tokio::time::sleep(Duration::from_millis(250)).await;
-
-    return Ok(());
 }
 
-fn send_routes_to_delay_checker(routes: Vec<Route>) -> Result<()> {
+#[tracing::instrument(err)]
+async fn fetch_routes_job() -> anyhow::Result<()> {
+    let routes = get_routes().await?;
+    save_routes(&routes)?;
+    send_routes_to_delay_checker(routes)?;
+
     Ok(())
 }
 
-fn save_routes(routes: &Vec<Route>) -> Result<()> {
+#[tracing::instrument(err)]
+pub fn send_routes_to_delay_checker(routes: Vec<Route>) -> Result<()> {
+    Ok(())
+}
+
+#[tracing::instrument(err)]
+pub fn save_routes(routes: &Vec<Route>) -> Result<()> {
     Ok(())
 }
 
