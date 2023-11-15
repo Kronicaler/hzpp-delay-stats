@@ -1,4 +1,4 @@
-//#![feature(error_generic_member_access)]
+#![feature(error_generic_member_access)]
 
 use anyhow::{bail, Result};
 use dotenvy::dotenv;
@@ -9,6 +9,7 @@ use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
+use std::error::Error;
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
@@ -66,13 +67,8 @@ async fn main() -> Result<()> {
         .with(env_filter)
         .set_default();
 
-    let routes = match get_routes().await {
-        Ok(routes) => routes,
-        Err(e) => {
-            error!("Error getting routes {} \n {}", e, e.backtrace());
-            bail!(e);
-        }
-    };
+    let routes = get_routes().await?;
+
     if let Err(e) = save_routes(&routes) {
         error!("Error saving routes {} \n {}", e, e.backtrace());
         bail!(e);

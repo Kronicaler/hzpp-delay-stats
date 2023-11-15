@@ -1,9 +1,11 @@
+use std::backtrace::Backtrace;
+
 use tracing::{error, info, info_span, Instrument};
 
 use crate::model::route::Route;
 
 #[tracing::instrument(err)]
-pub async fn get_routes() -> anyhow::Result<Vec<Route>> {
+pub async fn get_routes() -> Result<Vec<Route>, GetRoutesError> {
     let request = format!(
         "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
         chrono::Local::now().format("%Y%m%d")
@@ -27,9 +29,17 @@ pub async fn get_routes() -> anyhow::Result<Vec<Route>> {
 
 #[derive(thiserror::Error, Debug)]
 pub enum GetRoutesError {
-    #[error("Error fetching data")]
-    HttpRequestError(#[from] reqwest::Error),
+    #[error("Error fetching the routes \n {}", backtrace)]
+    HttpRequestError {
+        #[from]
+        source: reqwest::Error,
+        backtrace: Backtrace,
+    },
 
-    #[error("Error parsing a file")]
-    FileParsingError(#[from] serde_json::Error),
+    #[error("Error parsing the routes \n {}", backtrace)]
+    FileParsingError {
+        #[from]
+        source: serde_json::Error,
+        backtrace: Backtrace,
+    },
 }
