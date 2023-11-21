@@ -20,7 +20,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
 
 use crate::background_services::route_fetcher::get_routes;
-use crate::model::route::Route;
+use crate::model::hzpp_api_model::HzppRoute;
 
 mod background_services;
 mod model;
@@ -94,12 +94,12 @@ async fn fetch_routes_job() -> anyhow::Result<()> {
 }
 
 #[tracing::instrument(err)]
-pub fn send_routes_to_delay_checker(routes: Vec<Route>) -> Result<()> {
+pub fn send_routes_to_delay_checker(routes: Vec<HzppRoute>) -> Result<()> {
     Ok(())
 }
 
 #[tracing::instrument(err)]
-pub fn save_routes(routes: &Vec<Route>) -> Result<()> {
+pub fn save_routes(routes: &Vec<HzppRoute>) -> Result<()> {
     Ok(())
 }
 
@@ -110,7 +110,7 @@ fn get_delay() -> Result<(), HzppError> {
         let _enter = span.enter();
 
         let routes_file = "documentation/example_responses/routes.json";
-        let routes: Vec<Route> =
+        let routes: Vec<HzppRoute> =
             serde_json::from_str(&fs::read_to_string(routes_file).map_err(|e| {
                 HzppError::FileReadingError {
                     source: e,

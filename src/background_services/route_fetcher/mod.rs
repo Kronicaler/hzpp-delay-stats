@@ -2,10 +2,10 @@ use std::backtrace::Backtrace;
 
 use tracing::{error, info, info_span, Instrument};
 
-use crate::model::route::Route;
+use crate::model::hzpp_api_model::HzppRoute;
 
 #[tracing::instrument(err)]
-pub async fn get_routes() -> Result<Vec<Route>, GetRoutesError> {
+pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
     let request = format!(
         "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
         chrono::Local::now().format("%Y%m%d")
@@ -15,7 +15,7 @@ pub async fn get_routes() -> Result<Vec<Route>, GetRoutesError> {
         .await?
         .error_for_status()?;
 
-    let routes: Vec<Route> = serde_json::from_str(
+    let routes: Vec<HzppRoute> = serde_json::from_str(
         &response
             .text()
             .instrument(info_span!("Reading body of response"))

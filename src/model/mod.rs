@@ -1,4 +1,2 @@
-pub mod calendar;
-pub mod route;
-pub mod stop;
-pub mod train;
+pub mod hzpp_api_model;
+pub mod db_model;
