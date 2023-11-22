@@ -1,4 +1,4 @@
-use snafu::Snafu;
+use snafu::{Backtrace, Snafu};
 use tracing::{info, info_span, Instrument};
 
 use crate::model::hzpp_api_model::HzppRoute;
@@ -6,7 +6,7 @@ use crate::model::hzpp_api_model::HzppRoute;
 #[tracing::instrument(err)]
 pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
     let request = format!(
-        "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
+        "https://osipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
         chrono::Local::now().format("%Y%m%d")
     );
     let response = reqwest::get(&request)
@@ -30,8 +30,14 @@ pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
 #[derive(Snafu, Debug)]
 pub enum GetRoutesError {
     #[snafu(display("error fetching the routes {source}"), context(false))]
-    HttpRequestError { source: reqwest::Error },
+    HttpRequestError {
+        source: reqwest::Error,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("error parsing the routes {source}"), context(false))]
-    ParsingError { source: serde_json::Error },
+    ParsingError {
+        source: serde_json::Error,
+        backtrace: Backtrace,
+    },
 }

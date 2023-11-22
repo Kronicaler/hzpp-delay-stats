@@ -9,6 +9,7 @@ use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
+use snafu::{Backtrace, ResultExt, Whatever};
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
@@ -72,7 +73,9 @@ async fn main() -> Result<()> {
     sched
         .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
             Box::pin(async move {
-                _ = fetch_routes_job().await;
+                if let Err(err) = fetch_routes_job().await {
+                    error!("{:?}", err);
+                }
             })
         })?)
         .await?;
@@ -85,10 +88,13 @@ async fn main() -> Result<()> {
 }
 
 #[tracing::instrument(err)]
-async fn fetch_routes_job() -> anyhow::Result<()> {
-    let routes = get_routes().await?;
-    save_routes(&routes)?;
-    send_routes_to_delay_checker(routes)?;
+async fn fetch_routes_job() -> Result<(), Whatever> {
+    let routes = get_routes()
+        .await
+        .whatever_context("Error fetching routes")?;
+    save_routes(&routes).whatever_context("Error saving routes")?;
+    send_routes_to_delay_checker(routes)
+        .whatever_context("Error sending routes to delay checker")?;
 
     Ok(())
 }

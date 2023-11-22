@@ -34,4 +34,4 @@ sqlx = { version = "0.7.2", features = [
 ] }
 postgres = "0.19.7"
 rustls = "0.21.8"
-snafu = "0.7.5"
+snafu = { version = "0.7.5", features = ["backtrace"] }
