@@ -27,6 +27,7 @@ pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
     Ok(routes)
 }
 
+// TODO: explore having this replaced with snafu
 #[derive(thiserror::Error, Debug)]
 pub enum GetRoutesError {
     #[error("error fetching the routes \n{} \n{}", source, backtrace)]
