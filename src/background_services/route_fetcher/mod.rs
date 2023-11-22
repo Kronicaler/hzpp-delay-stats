@@ -1,6 +1,5 @@
-use std::backtrace::Backtrace;
-
-use tracing::{error, info, info_span, Instrument};
+use snafu::Snafu;
+use tracing::{info, info_span, Instrument};
 
 use crate::model::hzpp_api_model::HzppRoute;
 
@@ -28,19 +27,11 @@ pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
 }
 
 // TODO: explore having this replaced with snafu
-#[derive(thiserror::Error, Debug)]
+#[derive(Snafu, Debug)]
 pub enum GetRoutesError {
-    #[error("error fetching the routes \n{} \n{}", source, backtrace)]
-    HttpRequestError {
-        #[from]
-        source: reqwest::Error,
-        backtrace: Backtrace,
-    },
+    #[snafu(display("error fetching the routes {source}"), context(false))]
+    HttpRequestError { source: reqwest::Error },
 
-    #[error("error parsing the routes \n{} \n{}", source, backtrace)]
-    FileParsingError {
-        #[from]
-        source: serde_json::Error,
-        backtrace: Backtrace,
-    },
+    #[snafu(display("error parsing the routes {source}"), context(false))]
+    ParsingError { source: serde_json::Error },
 }
