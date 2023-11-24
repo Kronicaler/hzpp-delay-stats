@@ -1,8 +1,10 @@
 #![feature(error_generic_member_access)]
+#![feature(try_blocks)]
 
 use anyhow::Result;
 use dotenvy::dotenv;
 use itertools::Itertools;
+use model::db_model::RouteDb;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::new_exporter;
@@ -67,26 +69,42 @@ async fn main() -> Result<()> {
         .with(env_filter)
         .init();
 
-    let sched = JobScheduler::new().await?;
+    _ = fetch_routes_job().await;
 
-    sched
-        .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
-            Box::pin(async move {
-                _ = fetch_routes_job().await;
-            })
-        })?)
-        .await?;
+    Ok(())
+    // let sched = JobScheduler::new().await?;
 
-    sched.start().await?;
+    // sched
+    //     .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
+    //         Box::pin(async move {
+    //             _ = fetch_routes_job().await;
+    //         })
+    //     })?)
+    //     .await?;
 
-    loop {
-        tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
-    }
+    // sched.start().await?;
+
+    // loop {
+    //     tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
+    // }
 }
 
 #[tracing::instrument(err)]
 async fn fetch_routes_job() -> anyhow::Result<()> {
-    let routes = get_routes().await?;
+    let routes = get_routes()
+        .await?
+        .into_iter()
+        .map(|r| RouteDb::try_from(r))
+        .filter_map(|r| {
+            if let Err(e) = r {
+                error!("Error turning HzppRoute to RouteDb {e}");
+                return None;
+            }
+
+            return r.ok();
+        })
+        .collect_vec();
+
     save_routes(&routes)?;
     send_routes_to_delay_checker(routes)?;
 
@@ -94,12 +112,12 @@ async fn fetch_routes_job() -> anyhow::Result<()> {
 }
 
 #[tracing::instrument(err)]
-pub fn send_routes_to_delay_checker(routes: Vec<HzppRoute>) -> Result<()> {
+pub fn send_routes_to_delay_checker(routes: Vec<RouteDb>) -> Result<()> {
     Ok(())
 }
 
 #[tracing::instrument(err)]
-pub fn save_routes(routes: &Vec<HzppRoute>) -> Result<()> {
+pub fn save_routes(routes: &Vec<RouteDb>) -> Result<()> {
     Ok(())
 }
 
