@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Error};
-use chrono::{DateTime, Utc, TimeZone, FixedOffset};
+use chrono::{DateTime, Utc};
 use sqlx::prelude::FromRow;
 
 use super::hzpp_api_model::HzppRoute;
@@ -43,14 +43,14 @@ impl TryFrom<HzppRoute> for RouteDb {
                 .first()
                 .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
                 .departure_time
-                .and_local_timezone(chrono_tz::Europe::Zagreb),
+                .with_timezone(&Utc),
             real_end_time: None,
             expected_end_time: value
                 .stops
                 .last()
                 .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
                 .arrival_time
-                .and_local_timezone(),
+                .with_timezone(&Utc),
         })
     }
 }
