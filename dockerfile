@@ -8,7 +8,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder 
 WORKDIR /app
 
-RUN apt-get update && apt-get install --no-install-recommends -y cmake;
+RUN apt-get update && apt-get install --no-install-recommends -y cmake && rm -rf /var/lib/apt/lists/*;
 ENV SQLX_OFFLINE=true
 
 COPY --from=planner /app/recipe.json recipe.json
@@ -19,7 +19,7 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim as release
 
-RUN apt-get update && apt-get install --no-install-recommends -y libssl3 ca-certificates;
+RUN apt-get update && apt-get install --no-install-recommends -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*;
 
 WORKDIR /app
 COPY --from=builder /app/target/release/hzpp_delays /app/hzpp_delays

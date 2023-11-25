@@ -1,19 +1,19 @@
 #![feature(error_generic_member_access)]
+#![feature(try_blocks)]
 
 use anyhow::Result;
 use dotenvy::dotenv;
 use itertools::Itertools;
+use model::db_model::RouteDb;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
-use snafu::{Backtrace, ResultExt, Whatever};
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
-use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::{error, info, instrument, span, warn, Level};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -68,44 +68,55 @@ async fn main() -> Result<()> {
         .with(env_filter)
         .init();
 
-    let sched = JobScheduler::new().await?;
+    _ = fetch_routes_job().await;
 
-    sched
-        .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
-            Box::pin(async move {
-                if let Err(err) = fetch_routes_job().await {
-                    error!("{:?}", err);
-                }
-            })
-        })?)
-        .await?;
+    Ok(())
+    // let sched = JobScheduler::new().await?;
 
-    sched.start().await?;
+    // sched
+    //     .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
+    //         Box::pin(async move {
+    //             _ = fetch_routes_job().await;
+    //         })
+    //     })?)
+    //     .await?;
 
-    loop {
-        tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
-    }
+    // sched.start().await?;
+
+    // loop {
+    //     tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
+    // }
 }
 
 #[tracing::instrument(err)]
-async fn fetch_routes_job() -> Result<(), Whatever> {
+async fn fetch_routes_job() -> anyhow::Result<()> {
     let routes = get_routes()
-        .await
-        .whatever_context("Error fetching routes")?;
-    save_routes(&routes).whatever_context("Error saving routes")?;
-    send_routes_to_delay_checker(routes)
-        .whatever_context("Error sending routes to delay checker")?;
+        .await?
+        .into_iter()
+        .map(|r| RouteDb::try_from(r))
+        .filter_map(|r| {
+            if let Err(e) = r {
+                error!("Error turning HzppRoute to RouteDb {e}");
+                return None;
+            }
+
+            return r.ok();
+        })
+        .collect_vec();
+
+    save_routes(&routes)?;
+    send_routes_to_delay_checker(routes)?;
 
     Ok(())
 }
 
 #[tracing::instrument(err)]
-pub fn send_routes_to_delay_checker(routes: Vec<HzppRoute>) -> Result<()> {
+pub fn send_routes_to_delay_checker(routes: Vec<RouteDb>) -> Result<()> {
     Ok(())
 }
 
 #[tracing::instrument(err)]
-pub fn save_routes(routes: &Vec<HzppRoute>) -> Result<()> {
+pub fn save_routes(routes: &Vec<RouteDb>) -> Result<()> {
     Ok(())
 }
 
