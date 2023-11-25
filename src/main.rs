@@ -11,6 +11,8 @@ use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
+use sqlx::Postgres;
+use std::env;
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
@@ -68,7 +70,11 @@ async fn main() -> Result<()> {
         .with(env_filter)
         .init();
 
-    _ = fetch_routes_job().await;
+    let db_url = env::var("DATABASE_URL").unwrap();
+
+    let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+
+    _ = fetch_routes_job(pool.clone()).await;
 
     Ok(())
     // let sched = JobScheduler::new().await?;
@@ -89,7 +95,7 @@ async fn main() -> Result<()> {
 }
 
 #[tracing::instrument(err)]
-async fn fetch_routes_job() -> anyhow::Result<()> {
+async fn fetch_routes_job(pool: sqlx::Pool<Postgres>) -> anyhow::Result<()> {
     let routes = get_routes()
         .await?
         .into_iter()
@@ -104,7 +110,7 @@ async fn fetch_routes_job() -> anyhow::Result<()> {
         })
         .collect_vec();
 
-    save_routes(&routes)?;
+    save_routes(&routes, pool.clone()).await?;
     send_routes_to_delay_checker(routes)?;
 
     Ok(())
@@ -116,7 +122,40 @@ pub fn send_routes_to_delay_checker(routes: Vec<RouteDb>) -> Result<()> {
 }
 
 #[tracing::instrument(err)]
-pub fn save_routes(routes: &Vec<RouteDb>) -> Result<()> {
+pub async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> Result<()> {
+    for route in routes {
+        sqlx::query!(
+            r#"
+    INSERT INTO routes (
+        id,
+        route_number,
+        usual_source,
+        destination,
+        bikes_allowed,
+        wheelchair_accessible,
+        route_type,
+        expected_start_time,
+        expected_end_time
+    ) 
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    ON CONFLICT ( expected_start_time, id )
+    DO NOTHING
+        "#,
+            route.id,
+            route.route_number,
+            route.usual_source,
+            route.destination,
+            route.bikes_allowed,
+            route.wheelchair_accessible,
+            route.route_type,
+            route.expected_start_time,
+            route.expected_end_time
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
     Ok(())
 }
 

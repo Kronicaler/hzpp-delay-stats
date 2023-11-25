@@ -7,7 +7,7 @@ use crate::model::hzpp_api_model::HzppRoute;
 #[tracing::instrument(err)]
 pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
     let request = format!(
-        "https://osipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
+        "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
         chrono::Local::now().format("%Y%m%d")
     );
 
@@ -33,7 +33,6 @@ pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
     Ok(routes)
 }
 
-// TODO: explore having this replaced with snafu
 #[derive(thiserror::Error, Debug)]
 pub enum GetRoutesError {
     #[error("error fetching the routes \n{} \n{}", source, backtrace)]

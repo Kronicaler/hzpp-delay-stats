@@ -1,5 +1,5 @@
 CREATE TABLE stations(
-    id varchar(255) primary key NOT NULL,
+    id varchar(255) UNIQUE PRIMARY KEY NOT NULL,
     code int NOT NULL,
     name varchar(255) NOT NULL,
     latitude double precision NOT NULL,
@@ -18,19 +18,22 @@ CREATE TABLE routes(
     expected_start_time timestamp NOT NULL,
     real_end_time timestamp NULL,
     expected_end_time timestamp NOT NULL,
-    PRIMARY KEY(id,route_number)
+    PRIMARY KEY(expected_start_time, id),
+    UNIQUE(expected_start_time, id)
 );
 
 CREATE TABLE stops(
-    id varchar(255) primary key NOT NULL,
     station_id varchar(255) NOT NULL,
     route_id varchar(255) NOT NULL,
+    route_expected_start_time timestamp NOT NULL,
     sequence char NOT NULL,
     code int NOT NULL,
     real_arrival timestamp NULL,
     expected_arrival timestamp NOT NULL,
     real_departure timestamp NULL,
     expected_departure timestamp NOT NULL,
+    PRIMARY KEY(route_id, route_expected_start_time),
+    UNIQUE(route_id, route_expected_start_time),
     FOREIGN KEY (station_id) REFERENCES stations(id),
-    FOREIGN KEY (route_id) REFERENCES routes(id)
+    FOREIGN KEY (route_id, route_expected_start_time) REFERENCES routes(id, expected_start_time)
 );

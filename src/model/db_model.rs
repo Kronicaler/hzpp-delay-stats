@@ -56,6 +56,8 @@ impl TryFrom<HzppRoute> for RouteDb {
 }
 
 #[derive(Debug)]
+#[derive(sqlx::Type)]
+#[repr(u8)]
 pub enum BikesAllowed {
     NotAllowed = 0,
     Allowed = 1,
