@@ -55,13 +55,11 @@ impl TryFrom<HzppRoute> for RouteDb {
     }
 }
 
-#[derive(Debug)]
-#[derive(sqlx::Type)]
+#[derive(Debug, sqlx::Type)]
 #[repr(u8)]
 pub enum BikesAllowed {
-    NotAllowed = 0,
+    NotAllowed = 0 | 2, // API shenanigans
     Allowed = 1,
-    NotAllowed2 = 2,
 }
 
 impl TryFrom<i32> for BikesAllowed {
@@ -69,9 +67,8 @@ impl TryFrom<i32> for BikesAllowed {
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(BikesAllowed::NotAllowed),
+            0 | 2 => Ok(BikesAllowed::NotAllowed),
             1 => Ok(BikesAllowed::Allowed),
-            2 => Ok(BikesAllowed::NotAllowed2),
             _ => bail!("Got wrong value when trying to convert u8 {value} to BikesAllowed"),
         }
     }
@@ -79,9 +76,8 @@ impl TryFrom<i32> for BikesAllowed {
 
 #[derive(Debug)]
 pub enum WheelchairAccessible {
-    NotAccessible = 0,
+    NotAccessible = 0 | 2,
     Accessible = 1,
-    NotAccessible2 = 2,
 }
 
 #[derive(Debug)]
@@ -107,9 +103,8 @@ impl TryFrom<i32> for WheelchairAccessible {
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(WheelchairAccessible::NotAccessible),
+            0 | 2 => Ok(WheelchairAccessible::NotAccessible),
             1 => Ok(WheelchairAccessible::Accessible),
-            2 => Ok(WheelchairAccessible::NotAccessible2),
             _ => bail!("Got wrong value when trying to convert u8 {value} to WheelchairAccessible"),
         }
     }
