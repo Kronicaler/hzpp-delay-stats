@@ -9,10 +9,8 @@ use super::hzpp_api_model::HzppRoute;
 pub struct RouteDb {
     pub id: String,
     pub route_number: i32,
-    /// Usual starting station. Can be incorrect due to exceptions like construction.
-    pub usual_source: String,
-    /// Usual ending station. Can be incorrect due to exceptions like construction.
-    pub usual_destination: String,
+    pub source: String,
+    pub destination: String,
     pub bikes_allowed: BikesAllowed,
     pub wheelchair_accessible: WheelchairAccessible,
     pub route_type: RouteType,
@@ -25,13 +23,19 @@ pub struct RouteDb {
 }
 
 impl RouteDb {
-    pub fn try_from_hzpp_route(value: HzppRoute, date: DateTime<Tz>) -> anyhow::Result<Self> {
-        // These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
-        let expected_start_time = value
+    pub fn try_from_hzpp_route(hzpp_route: HzppRoute, date: DateTime<Tz>) -> anyhow::Result<Self> {
+        let first_stop = hzpp_route
             .stops
             .first()
-            .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
-            .departure_time;
+            .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?;
+
+        let last_stop = hzpp_route
+            .stops
+            .last()
+            .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?;
+
+        // These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
+        let expected_start_time = first_stop.departure_time;
 
         let expected_start_time = date
             .checked_add_days(Days::new(expected_start_time.0 as u64 / 24))
@@ -45,11 +49,7 @@ impl RouteDb {
             .with_nanosecond(0)
             .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
 
-        let expected_end_time = value
-            .stops
-            .last()
-            .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
-            .arrival_time;
+        let expected_end_time = last_stop.arrival_time;
 
         let expected_end_time = date
             .checked_add_days(Days::new(expected_end_time.0 as u64 / 24))
@@ -64,13 +64,13 @@ impl RouteDb {
             .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
 
         Ok(RouteDb {
-            id: value.route_id,
-            route_number: value.route_number,
-            usual_source: value.route_src,
-            usual_destination: value.route_desc,
-            bikes_allowed: value.bikes_allowed.try_into()?,
-            wheelchair_accessible: value.wheelchair_accessible.try_into()?,
-            route_type: value.route_type.try_into()?,
+            id: hzpp_route.route_id,
+            route_number: hzpp_route.route_number,
+            source: first_stop.stop_name.clone(),
+            destination: last_stop.stop_name.clone(),
+            bikes_allowed: hzpp_route.bikes_allowed.try_into()?,
+            wheelchair_accessible: hzpp_route.wheelchair_accessible.try_into()?,
+            route_type: hzpp_route.route_type.try_into()?,
             real_start_time: None,
             expected_start_time: expected_start_time.with_timezone(&Utc),
             real_end_time: None,

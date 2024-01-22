@@ -9,8 +9,8 @@ CREATE TABLE stations(
 CREATE TABLE routes(
     id varchar(255) NOT NULL,
     route_number int NOT NULL,
-    usual_source varchar(255) NOT NULL,
-    usual_destination varchar(255) NOT NULL,
+    source varchar(255) NOT NULL,
+    destination varchar(255) NOT NULL,
     bikes_allowed smallint NOT NULL,
     wheelchair_accessible smallint NOT NULL,
     route_type smallint NOT NULL,

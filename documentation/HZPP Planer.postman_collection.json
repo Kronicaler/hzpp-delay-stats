@@ -32,10 +32,69 @@
 					]
 				}
 			},
-			"response": []
+			"response": [
+				{
+					"name": "get routes",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date=20240122",
+							"protocol": "https",
+							"host": [
+								"josipsalkovic",
+								"com"
+							],
+							"path": [
+								"hzpp",
+								"planer",
+								"v3",
+								"getRoutes.php"
+							],
+							"query": [
+								{
+									"key": "date",
+									"value": "20240122"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 22 Jan 2024 15:45:30 GMT"
+						},
+						{
+							"key": "server",
+							"value": "Apache"
+						},
+						{
+							"key": "transfer-encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						},
+						{
+							"key": "set-cookie",
+							"value": "PH_HPXY_CHECK=s1; path=/"
+						},
+						{
+							"key": "cache-control",
+							"value": "private"
+						}
+					],
+					"cookie": [],
+					"body": "[\n    {\n        \"route_id\": \"i-tr146au\",\n        \"route_number\": 2010,\n        \"route_src\": \"Tovarnik\",\n        \"route_desc\": \"Zagreb Glavni kolodvor\",\n        \"arrival_time\": \"03:38:00\",\n        \"departure_time\": \"03:39:00\",\n        \"bikes_allowed\": 1,\n        \"wheelchair_accessible\": 2,\n        \"route_type\": 2,\n        \"stops\": [\n            {\n                \"stop_id\": \"i-o410\",\n                \"stop_name\": \"Vinkovci\",\n                \"arrival_time\": \"03:31:00\",\n                \"departure_time\": \"03:31:00\",\n                \"latitude\": 45.300398403000002645057975314557552337646484375,\n                \"longitude\": 18.802808530600000125332371680997312068939208984375,\n                \"sequence\": 1\n            },\n            {\n                \"stop_id\": \"i-o405\",\n                \"stop_name\": \"Ivankovo\",\n                \"arrival_time\": \"03:38:00\",\n                \"departure_time\": \"03:39:00\",\n                \"latitude\": 45.27841224640000206136392080225050449371337890625,\n                \"longitude\": 18.66747958079999847313956706784665584564208984375,\n                \"sequence\": 2\n            },\n            {\n                \"stop_id\": \"i-o406\",\n                \"stop_name\": \"Vođinci\",\n                \"arrival_time\": \"03:42:00\",\n                \"departure_time\": \"03:42:00\",\n                \"latitude\": 45.2696813928999972631572745740413665771484375,\n                \"longitude\": 18.61376685089999938327309791930019855499267578125,\n                \"sequence\": 3\n            }\n        ],\n        \"calendar\": [\n            {\n                \"monday\": 1,\n                \"tuesday\": 1,\n                \"wednesday\": 1,\n                \"thursday\": 1,\n                \"friday\": 1,\n                \"saturday\": 0,\n                \"sunday\": 0\n            },\n            {\n                \"monday\": 0,\n                \"tuesday\": 0,\n                \"wednesday\": 0,\n                \"thursday\": 0,\n                \"friday\": 0,\n                \"saturday\": 1,\n                \"sunday\": 0\n            }\n        ]\n    }\n]"
+				}
+			]
 		},
 		{
-			"name": "get stops",
+			"name": "get stations",
 			"request": {
 				"method": "GET",
 				"header": [],
@@ -54,7 +113,52 @@
 					]
 				}
 			},
-			"response": []
+			"response": [
+				{
+					"name": "get stations",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://josipsalkovic.com/hzpp/planer/v3/getStops.php",
+							"protocol": "https",
+							"host": [
+								"josipsalkovic",
+								"com"
+							],
+							"path": [
+								"hzpp",
+								"planer",
+								"v3",
+								"getStops.php"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 22 Jan 2024 16:14:45 GMT"
+						},
+						{
+							"key": "server",
+							"value": "Apache"
+						},
+						{
+							"key": "transfer-encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "[\n    {\n        \"stop_id\": \"i-o432\",\n        \"stop_code\": 71402,\n        \"stop_name\": \"Andrijaševci\",\n        \"stop_lat\": 45.23001437549999792508970131166279315948486328125,\n        \"stop_lng\": 18.7305206475000005639230948872864246368408203125\n    },\n    {\n        \"stop_id\": \"i-o557\",\n        \"stop_code\": 72802,\n        \"stop_name\": \"Andrijevci\",\n        \"stop_lat\": 45.19077487930000103233396657742559909820556640625,\n        \"stop_lng\": 18.292890468799999581506199319846928119659423828125\n    },\n    {\n        \"stop_id\": \"i-o444\",\n        \"stop_code\": 71506,\n        \"stop_name\": \"Antunovac\",\n        \"stop_lat\": 45.48359310189999860085663385689258575439453125,\n        \"stop_lng\": 18.670141947699999462884079548530280590057373046875\n    }\n]"
+				}
+			]
 		},
 		{
 			"name": "get delay",
@@ -161,7 +265,52 @@
 					]
 				}
 			},
-			"response": []
+			"response": [
+				{
+					"name": "get connection links",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://josipsalkovic.com/hzpp/planer/v3/getConnectionLinks.php",
+							"protocol": "https",
+							"host": [
+								"josipsalkovic",
+								"com"
+							],
+							"path": [
+								"hzpp",
+								"planer",
+								"v3",
+								"getConnectionLinks.php"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 22 Jan 2024 16:15:43 GMT"
+						},
+						{
+							"key": "server",
+							"value": "Apache"
+						},
+						{
+							"key": "transfer-encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "[\n    {\n        \"stop_name\": \"Banova Jaruga\",\n        \"waiting_route_number\": 541,\n        \"route_number\": 2411,\n        \"waiting_minutes\": 10\n    },\n    {\n        \"stop_name\": \"Banova Jaruga\",\n        \"waiting_route_number\": 542,\n        \"route_number\": 2411,\n        \"waiting_minutes\": 10\n    },\n    {\n        \"stop_name\": \"Banova Jaruga\",\n        \"waiting_route_number\": 546,\n        \"route_number\": 2457,\n        \"waiting_minutes\": 5\n    },\n    {\n        \"stop_name\": \"Banova Jaruga\",\n        \"waiting_route_number\": 2013,\n        \"route_number\": 2451,\n        \"waiting_minutes\": 10\n    }\n]"
+				}
+			]
 		},
 		{
 			"name": "get compositions",
@@ -183,7 +332,52 @@
 					]
 				}
 			},
-			"response": []
+			"response": [
+				{
+					"name": "get compositions",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "https://josipsalkovic.com/hzpp/planer/v3/getCompositions.php",
+							"protocol": "https",
+							"host": [
+								"josipsalkovic",
+								"com"
+							],
+							"path": [
+								"hzpp",
+								"planer",
+								"v3",
+								"getCompositions.php"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "html",
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 22 Jan 2024 16:15:24 GMT"
+						},
+						{
+							"key": "server",
+							"value": "Apache"
+						},
+						{
+							"key": "transfer-encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "content-type",
+							"value": "text/html; charset=UTF-8"
+						}
+					],
+					"cookie": [],
+					"body": "[\n    {\n        \"id\": \"3\",\n        \"name\": \" DD MD   \",\n        \"title\": \"Wagon MDDlm series\",\n        \"description\": \"\\u2013 four-axle wagons intended for the carriage of tracked cars\\r\\n\\u2013 internal and international traffic\\r\\n\\u2013 Maximum speed: 120 km\\/h\",\n        \"images\": []\n    },\n    {\n        \"id\": \"1\",\n        \"name\": \"6111\",\n        \"title\": \"Electric train 6 111\",\n        \"description\": \"Electric train series 6 111 - \\\"Hungarian\\\"\\r\\n\\r\\n- maximum speed: 120 km \\/ h\\r\\n- power: 1.2 MW\\r\\n- thyristor regulation\\r\\n- VOITH axle transmission\\r\\n- KON\\u010cAR electric traction motors\\r\\n- 136\\/236 seats\\r\\n- production: Ganz M\",\n        \"images\": [\n            {\n                \"picture_url\": \"http:\\/\\/www.hzpp.hr\\/Media\\/Default\\/_Profiles\\/7823f8ab\\/3a18ba12\\/4a_4107%20vr.jpg?v=636780598840709531\"\n            },\n            {\n                \"picture_url\": \"http:\\/\\/www.hzpp.hr\\/Media\\/Default\\/_Profiles\\/7823f8ab\\/3a18ba12\\/4b_4103%20vr.jpg?v=636780598838990768\"\n            },\n            {\n                \"picture_url\": \"http:\\/\\/www.hzpp.hr\\/Media\\/Default\\/_Profiles\\/7823f8ab\\/3a18ba12\\/6111r.jpg?v=636780598842115745\"\n            }\n        ]\n    }\n]"
+				}
+			]
 		}
 	]
 }
