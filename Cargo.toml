@@ -3,6 +3,9 @@ name = "hzpp_delays"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev.package.sqlx-macros]
+opt-level = 3
+
 [dependencies]
 # tracing and opentelemetry
 opentelemetry = "0.21"

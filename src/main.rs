@@ -12,7 +12,7 @@ use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
-use sqlx::Postgres;
+use sqlx::{Postgres, QueryBuilder};
 use std::env;
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
@@ -125,11 +125,8 @@ pub fn send_routes_to_delay_checker(routes: Vec<RouteDb>) -> Result<()> {
 
 #[tracing::instrument(err)]
 pub async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> Result<()> {
-    for route in routes {
-        sqlx::query!(
-            r#"
-    INSERT INTO routes (
-        id,
+    let mut query_builder = QueryBuilder::new(
+        "INSERT INTO routes (id,
         route_number,
         source,
         destination,
@@ -137,26 +134,26 @@ pub async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> R
         wheelchair_accessible,
         route_type,
         expected_start_time,
-        expected_end_time
-    ) 
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-    ON CONFLICT ( expected_start_time, id )
-    DO NOTHING
-        "#,
-            route.id,
-            route.route_number,
-            route.source,
-            route.destination,
-            route.bikes_allowed as i16,
-            route.wheelchair_accessible as i16,
-            route.route_type as i16,
-            route.expected_start_time.naive_utc(),
-            route.expected_end_time.naive_utc()
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-    }
+        expected_end_time) ",
+    );
+
+    query_builder.push_values(routes, |mut b, route| {
+        b.push_bind(&route.id)
+            .push_bind(route.route_number)
+            .push_bind(&route.source)
+            .push_bind(&route.destination)
+            .push_bind(route.bikes_allowed as i16)
+            .push_bind(route.wheelchair_accessible as i16)
+            .push_bind(route.route_type as i16)
+            .push_bind(route.expected_start_time)
+            .push_bind(route.expected_end_time);
+    });
+
+    query_builder.push(" ON CONFLICT ( expected_start_time, id ) DO NOTHING");
+
+    let query = query_builder.build();
+
+    query.execute(&pool).await?;
 
     Ok(())
 }
