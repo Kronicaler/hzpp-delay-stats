@@ -54,7 +54,7 @@ impl RouteDb {
         let expected_end_time = date
             .checked_add_days(Days::new(expected_end_time.0 as u64 / 24))
             .ok_or_else(|| anyhow!("invalid end time day"))?
-            .with_hour(expected_end_time.0 as u32 / 24)
+            .with_hour(expected_end_time.0 as u32 % 24)
             .ok_or_else(|| anyhow!("invalid end time hour"))?
             .with_minute(expected_end_time.1.into())
             .ok_or_else(|| anyhow!("invalid end time minute"))?
