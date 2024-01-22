@@ -2,6 +2,7 @@
 #![feature(try_blocks)]
 
 use anyhow::Result;
+use chrono_tz::Europe::Zagreb;
 use dotenvy::dotenv;
 use itertools::Itertools;
 use model::db_model::RouteDb;
@@ -96,17 +97,18 @@ async fn main() -> Result<()> {
 
 #[tracing::instrument(err)]
 async fn fetch_routes_job(pool: sqlx::Pool<Postgres>) -> anyhow::Result<()> {
-    let routes = get_routes()
+    let today = chrono::Local::now().with_timezone(&Zagreb);
+
+    let routes = get_routes(today)
         .await?
         .into_iter()
-        .map(|r| RouteDb::try_from(r))
-        .filter_map(|r| {
-            if let Err(e) = r {
+        .map(|r| RouteDb::try_from_hzpp_route(r, today))
+        .filter_map(|r| match r {
+            Err(e) => {
                 error!("Error turning HzppRoute to RouteDb {e}");
-                return None;
+                None
             }
-
-            return r.ok();
+            Ok(r) => Some(r),
         })
         .collect_vec();
 

@@ -1,14 +1,16 @@
 use std::backtrace::Backtrace;
 
+use chrono::DateTime;
+use chrono_tz::Tz;
 use tracing::{info, info_span, Instrument};
 
 use crate::model::hzpp_api_model::HzppRoute;
 
 #[tracing::instrument(err)]
-pub async fn get_routes() -> Result<Vec<HzppRoute>, GetRoutesError> {
+pub async fn get_routes(date: DateTime<Tz>) -> Result<Vec<HzppRoute>, GetRoutesError> {
     let request = format!(
         "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
-        chrono::Local::now().format("%Y%m%d")
+        date.format("%Y%m%d")
     );
 
     let response = reqwest::get(&request)

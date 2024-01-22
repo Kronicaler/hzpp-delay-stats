@@ -1,9 +1,5 @@
-use std::str::FromStr;
-
-use anyhow::anyhow;
-use chrono::{DateTime, TimeZone};
-use chrono_tz::{Europe::Zagreb, Tz};
 use serde::{de, Deserialize, Deserializer, Serialize};
+use std::str::FromStr;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HzppRoute {
@@ -13,11 +9,11 @@ pub struct HzppRoute {
     pub route_src: String,
     pub route_desc: String,
     /// Is completely incorrect
-    #[serde(deserialize_with = "datetime_from_naive_time_str")]
-    pub arrival_time: DateTime<Tz>,
+    #[serde(deserialize_with = "timestamp_from_hzpp_time")]
+    pub arrival_time: (u8, u8),
     /// Is completely incorrect
-    #[serde(deserialize_with = "datetime_from_naive_time_str")]
-    pub departure_time: DateTime<Tz>,
+    #[serde(deserialize_with = "timestamp_from_hzpp_time")]
+    pub departure_time: (u8, u8),
     /// 1 is true. 0 and 2 are false
     pub bikes_allowed: i32,
     /// 1 is true. 0 and 2 are false
@@ -43,32 +39,27 @@ pub struct Calendar {
 pub struct HzzpStop {
     pub stop_id: String,
     pub stop_name: String,
-    #[serde(deserialize_with = "datetime_from_naive_time_str")]
-    pub arrival_time: DateTime<Tz>,
-    #[serde(deserialize_with = "datetime_from_naive_time_str")]
-    pub departure_time: DateTime<Tz>,
+    #[serde(deserialize_with = "timestamp_from_hzpp_time")]
+    pub arrival_time: (u8, u8),
+    #[serde(deserialize_with = "timestamp_from_hzpp_time")]
+    pub departure_time: (u8, u8),
     pub latitude: f64,
     pub longitude: f64,
     pub sequence: i32,
 }
 
-fn datetime_from_naive_time_str<'de, D>(deserializer: D) -> Result<DateTime<Tz>, D::Error>
+fn timestamp_from_hzpp_time<'de, D>(deserializer: D) -> Result<(u8, u8), D::Error>
 where
     D: Deserializer<'de>,
 {
     // These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
     let s: String = Deserialize::deserialize(deserializer)?;
 
-    let res: anyhow::Result<DateTime<Tz>> = try {
-        let hour: u32 = String::from_str(&s[0..=1])?.parse()?;
-        let minute: u32 = String::from_str(&s[3..=4])?.parse()?;
-        let second: u32 = String::from_str(&s[6..=7])?.parse()?;
-        let day: u32 = hour.saturating_sub(24) + 1;
+    let res: anyhow::Result<(u8, u8)> = try {
+        let hour: u8 = String::from_str(&s[0..=1])?.parse()?;
+        let minute: u8 = String::from_str(&s[3..=4])?.parse()?;
 
-        Zagreb
-            .with_ymd_and_hms(0, 1, day, hour % 24, minute, second)
-            .earliest()
-            .ok_or_else(|| anyhow!("Error when constructing date"))?
+        (hour, minute)
     };
 
     return res.map_err(de::Error::custom);

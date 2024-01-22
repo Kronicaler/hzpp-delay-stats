@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Error};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
+use chrono_tz::Tz;
 use sqlx::prelude::FromRow;
 
 use super::hzpp_api_model::HzppRoute;
@@ -10,13 +11,11 @@ pub struct RouteDb {
     pub route_number: i32,
     /// Usual starting station. Can be incorrect due to exceptions like construction.
     pub usual_source: String,
-    pub destination: String,
-    /// 1 is true. 0 and 2 are false.
-    pub bikes_allowed: BikesAllowed, // TODO turn into enum
-    /// 1 is true. 0 and 2 are false
-    pub wheelchair_accessible: WheelchairAccessible, // TODO turn into enum
-    /// 2 is train. 3 is bus
-    pub route_type: RouteType, // TODO turn into enum
+    /// Usual ending station. Can be incorrect due to exceptions like construction.
+    pub usual_destination: String,
+    pub bikes_allowed: BikesAllowed,
+    pub wheelchair_accessible: WheelchairAccessible,
+    pub route_type: RouteType,
     pub real_start_time: Option<DateTime<Utc>>,
     /// The departure time of the first stop
     pub expected_start_time: DateTime<Utc>,
@@ -25,32 +24,44 @@ pub struct RouteDb {
     pub expected_end_time: DateTime<Utc>,
 }
 
-impl TryFrom<HzppRoute> for RouteDb {
-    type Error = Error;
+impl RouteDb {
+    pub fn try_from_hzpp_route(value: HzppRoute, date: DateTime<Tz>) -> anyhow::Result<Self> {
+        let expected_start_time = value
+            .stops
+            .first()
+            .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
+            .departure_time;
 
-    fn try_from(value: HzppRoute) -> Result<Self, Self::Error> {
+        let expected_start_time = date
+            .with_hour(expected_start_time.0.into())
+            .ok_or_else(|| anyhow!("invalid start time hour"))?
+            .with_minute(expected_start_time.1.into())
+            .ok_or_else(|| anyhow!("invalid start time minute"))?;
+
+        let expected_end_time = value
+            .stops
+            .last()
+            .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
+            .arrival_time;
+
+        let expected_end_time = date
+            .with_hour(expected_end_time.0.into())
+            .ok_or_else(|| anyhow!("invalid end time hour"))?
+            .with_minute(expected_end_time.1.into())
+            .ok_or_else(|| anyhow!("invalid end time minute"))?;
+
         Ok(RouteDb {
             id: value.route_id,
             route_number: value.route_number,
             usual_source: value.route_src,
-            destination: value.route_desc,
+            usual_destination: value.route_desc,
             bikes_allowed: value.bikes_allowed.try_into()?,
             wheelchair_accessible: value.wheelchair_accessible.try_into()?,
             route_type: value.route_type.try_into()?,
             real_start_time: None,
-            expected_start_time: value
-                .stops
-                .first()
-                .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
-                .departure_time
-                .with_timezone(&Utc),
+            expected_start_time: expected_start_time.with_timezone(&Utc),
             real_end_time: None,
-            expected_end_time: value
-                .stops
-                .last()
-                .ok_or_else(|| anyhow!("Unexpected route with 0 stops"))?
-                .arrival_time
-                .with_timezone(&Utc),
+            expected_end_time: expected_end_time.with_timezone(&Utc),
         })
     }
 }
