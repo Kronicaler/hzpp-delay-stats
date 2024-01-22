@@ -132,7 +132,7 @@ pub async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> R
         id,
         route_number,
         usual_source,
-        destination,
+        usual_destination,
         bikes_allowed,
         wheelchair_accessible,
         route_type,
@@ -146,12 +146,12 @@ pub async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> R
             route.id,
             route.route_number,
             route.usual_source,
-            route.destination,
-            route.bikes_allowed,
-            route.wheelchair_accessible,
-            route.route_type,
-            route.expected_start_time,
-            route.expected_end_time
+            route.usual_destination,
+            route.bikes_allowed as i16,
+            route.wheelchair_accessible as i16,
+            route.route_type as i16,
+            route.expected_start_time.naive_utc(),
+            route.expected_end_time.naive_utc()
         )
         .execute(&pool)
         .await

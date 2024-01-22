@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Error};
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Days, Timelike, Utc};
 use chrono_tz::Tz;
 use sqlx::prelude::FromRow;
 
@@ -26,6 +26,7 @@ pub struct RouteDb {
 
 impl RouteDb {
     pub fn try_from_hzpp_route(value: HzppRoute, date: DateTime<Tz>) -> anyhow::Result<Self> {
+        // These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
         let expected_start_time = value
             .stops
             .first()
@@ -33,10 +34,16 @@ impl RouteDb {
             .departure_time;
 
         let expected_start_time = date
-            .with_hour(expected_start_time.0.into())
+            .checked_add_days(Days::new(expected_start_time.0 as u64 / 24))
+            .ok_or_else(|| anyhow!("invalid start time day"))?
+            .with_hour(expected_start_time.0 as u32 % 24)
             .ok_or_else(|| anyhow!("invalid start time hour"))?
             .with_minute(expected_start_time.1.into())
-            .ok_or_else(|| anyhow!("invalid start time minute"))?;
+            .ok_or_else(|| anyhow!("invalid start time minute"))?
+            .with_second(0)
+            .ok_or_else(|| anyhow!("invalid start time second"))?
+            .with_nanosecond(0)
+            .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
 
         let expected_end_time = value
             .stops
@@ -45,10 +52,16 @@ impl RouteDb {
             .arrival_time;
 
         let expected_end_time = date
-            .with_hour(expected_end_time.0.into())
+            .checked_add_days(Days::new(expected_end_time.0 as u64 / 24))
+            .ok_or_else(|| anyhow!("invalid end time day"))?
+            .with_hour(expected_end_time.0 as u32 / 24)
             .ok_or_else(|| anyhow!("invalid end time hour"))?
             .with_minute(expected_end_time.1.into())
-            .ok_or_else(|| anyhow!("invalid end time minute"))?;
+            .ok_or_else(|| anyhow!("invalid end time minute"))?
+            .with_second(0)
+            .ok_or_else(|| anyhow!("invalid end time second"))?
+            .with_nanosecond(0)
+            .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
 
         Ok(RouteDb {
             id: value.route_id,
@@ -66,8 +79,7 @@ impl RouteDb {
     }
 }
 
-#[derive(Debug, sqlx::Type)]
-#[repr(u8)]
+#[derive(Copy, Clone, Debug, sqlx::Type)]
 pub enum BikesAllowed {
     NotAllowed = 0 | 2, // API shenanigans
     Allowed = 1,
@@ -85,13 +97,13 @@ impl TryFrom<i32> for BikesAllowed {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum WheelchairAccessible {
     NotAccessible = 0 | 2,
     Accessible = 1,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum RouteType {
     Train = 2,
     Bus = 3,
@@ -121,7 +133,7 @@ impl TryFrom<i32> for WheelchairAccessible {
     }
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Clone, Debug, FromRow)]
 pub struct StopDb {
     pub id: String,
     pub station_id: String,
@@ -133,7 +145,7 @@ pub struct StopDb {
     pub expected_departure: DateTime<Utc>,
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Clone, Debug, FromRow)]
 pub struct StationDb {
     pub id: String,
     pub code: i32,
