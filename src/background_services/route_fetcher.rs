@@ -1,13 +1,90 @@
-use std::backtrace::Backtrace;
-
+//! Responsible for fetching and saving routes
+use crate::model::{db_model::RouteDb, hzpp_api_model::HzppRoute};
 use chrono::DateTime;
-use chrono_tz::Tz;
-use tracing::{info, info_span, Instrument};
+use chrono_tz::{Europe::Zagreb, Tz};
+use itertools::Itertools;
+use sqlx::{Postgres, QueryBuilder};
+use std::backtrace::Backtrace;
+use tokio::sync::mpsc::Sender;
+use tracing::{error, info, info_span, Instrument};
 
-use crate::model::hzpp_api_model::HzppRoute;
+/// Gets todays routes and saves them to the DB.
+/// If a duplicate route is already in the DB then it's discarded.
+#[tracing::instrument(err)]
+pub async fn get_todays_routes(
+    pool: sqlx::Pool<Postgres>,
+    delay_checker_sender: Sender<RouteDb>,
+) -> anyhow::Result<()> {
+    let today = chrono::Local::now().with_timezone(&Zagreb);
+
+    let routes = fetch_routes(today)
+        .await?
+        .into_iter()
+        .map(|r| RouteDb::try_from_hzpp_route(r, today))
+        .filter_map(|r| match r {
+            Err(e) => {
+                error!("Error turning HzppRoute to RouteDb {e}");
+                None
+            }
+            Ok(r) => Some(r),
+        })
+        .collect_vec();
+
+    save_routes(&routes, pool.clone()).await?;
+    send_routes_to_delay_checker(routes, delay_checker_sender).await?;
+
+    Ok(())
+}
 
 #[tracing::instrument(err)]
-pub async fn get_routes(date: DateTime<Tz>) -> Result<Vec<HzppRoute>, GetRoutesError> {
+async fn send_routes_to_delay_checker(
+    routes: Vec<RouteDb>,
+    delay_checker_sender: Sender<RouteDb>,
+) -> anyhow::Result<()> {
+    for route in routes {
+        delay_checker_sender.send(route).await?;
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(err)]
+async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> anyhow::Result<()> {
+    let mut query_builder = QueryBuilder::new(
+        "INSERT INTO routes (id,
+        route_number,
+        source,
+        destination,
+        bikes_allowed,
+        wheelchair_accessible,
+        route_type,
+        expected_start_time,
+        expected_end_time) ",
+    );
+
+    query_builder.push_values(routes, |mut b, route| {
+        b.push_bind(&route.id)
+            .push_bind(route.route_number)
+            .push_bind(&route.source)
+            .push_bind(&route.destination)
+            .push_bind(route.bikes_allowed as i16)
+            .push_bind(route.wheelchair_accessible as i16)
+            .push_bind(route.route_type as i16)
+            .push_bind(route.expected_start_time)
+            .push_bind(route.expected_end_time);
+    });
+
+    query_builder.push(" ON CONFLICT ( expected_start_time, id ) DO NOTHING");
+
+    let query = query_builder.build();
+
+    query.execute(&pool).await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(err)]
+async fn fetch_routes(date: DateTime<Tz>) -> Result<Vec<HzppRoute>, GetRoutesError> {
     let request = format!(
         "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
         date.format("%Y%m%d")
@@ -36,7 +113,7 @@ pub async fn get_routes(date: DateTime<Tz>) -> Result<Vec<HzppRoute>, GetRoutesE
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum GetRoutesError {
+enum GetRoutesError {
     #[error("error fetching the routes \n{} \n{}", source, backtrace)]
     HttpRequestError {
         #[from]

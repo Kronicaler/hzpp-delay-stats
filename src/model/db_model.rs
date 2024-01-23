@@ -5,7 +5,7 @@ use sqlx::prelude::FromRow;
 
 use super::hzpp_api_model::HzppRoute;
 
-#[derive(Debug, FromRow)]
+#[derive(Clone, Debug, FromRow)]
 pub struct RouteDb {
     pub id: String,
     pub route_number: i32,

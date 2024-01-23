@@ -1,8 +1,9 @@
 #![feature(error_generic_member_access)]
 #![feature(try_blocks)]
 
+use crate::model::hzpp_api_model::HzppRoute;
 use anyhow::Result;
-use chrono_tz::Europe::Zagreb;
+use background_services::route_fetcher::get_todays_routes;
 use dotenvy::dotenv;
 use itertools::Itertools;
 use model::db_model::RouteDb;
@@ -12,19 +13,16 @@ use opentelemetry_otlp::new_exporter;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use regex::Regex;
-use sqlx::{Postgres, QueryBuilder};
 use std::env;
 use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
+use tokio::sync::mpsc::channel;
 use tracing::{error, info, instrument, span, warn, Level};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
-
-use crate::background_services::route_fetcher::get_routes;
-use crate::model::hzpp_api_model::HzppRoute;
 
 mod background_services;
 mod model;
@@ -75,7 +73,10 @@ async fn main() -> Result<()> {
 
     let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
 
-    _ = fetch_routes_job(pool.clone()).await;
+    let (delay_checker_sender, delay_checker_receiver) = channel::<RouteDb>(1024);
+
+    get_todays_routes(pool.clone(), delay_checker_sender.clone()).await?;
+    tokio::time::sleep(Duration::from_secs(10)).await;
 
     Ok(())
     // let sched = JobScheduler::new().await?;
@@ -93,69 +94,6 @@ async fn main() -> Result<()> {
     // loop {
     //     tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
     // }
-}
-
-#[tracing::instrument(err)]
-async fn fetch_routes_job(pool: sqlx::Pool<Postgres>) -> anyhow::Result<()> {
-    let today = chrono::Local::now().with_timezone(&Zagreb);
-
-    let routes = get_routes(today)
-        .await?
-        .into_iter()
-        .map(|r| RouteDb::try_from_hzpp_route(r, today))
-        .filter_map(|r| match r {
-            Err(e) => {
-                error!("Error turning HzppRoute to RouteDb {e}");
-                None
-            }
-            Ok(r) => Some(r),
-        })
-        .collect_vec();
-
-    save_routes(&routes, pool.clone()).await?;
-    send_routes_to_delay_checker(routes)?;
-
-    Ok(())
-}
-
-#[tracing::instrument(err)]
-pub fn send_routes_to_delay_checker(routes: Vec<RouteDb>) -> Result<()> {
-    Ok(())
-}
-
-#[tracing::instrument(err)]
-pub async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> Result<()> {
-    let mut query_builder = QueryBuilder::new(
-        "INSERT INTO routes (id,
-        route_number,
-        source,
-        destination,
-        bikes_allowed,
-        wheelchair_accessible,
-        route_type,
-        expected_start_time,
-        expected_end_time) ",
-    );
-
-    query_builder.push_values(routes, |mut b, route| {
-        b.push_bind(&route.id)
-            .push_bind(route.route_number)
-            .push_bind(&route.source)
-            .push_bind(&route.destination)
-            .push_bind(route.bikes_allowed as i16)
-            .push_bind(route.wheelchair_accessible as i16)
-            .push_bind(route.route_type as i16)
-            .push_bind(route.expected_start_time)
-            .push_bind(route.expected_end_time);
-    });
-
-    query_builder.push(" ON CONFLICT ( expected_start_time, id ) DO NOTHING");
-
-    let query = query_builder.build();
-
-    query.execute(&pool).await?;
-
-    Ok(())
 }
 
 #[instrument(err)]
