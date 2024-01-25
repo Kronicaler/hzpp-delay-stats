@@ -180,13 +180,13 @@ async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, anyhow::Error> 
 
     let delay = match content {
         ref x if x.contains("Vlak ceka polazak") => TrainStatus::WaitingForDeparture,
-        ref x if x.contains("Vlak je redovit") && !x.contains("Završio je vožnju") => {
+        ref x if x.contains("Vlak je redovit") && !x.contains("Završio vožnju") => {
             TrainStatus::OnTime
         }
-        ref x if x.contains("Kasni") && !x.contains("Završio je vožnju") => TrainStatus::Late {
+        ref x if x.contains("Kasni") && !x.contains("Završio vožnju") => TrainStatus::Late {
             minutes_late: get_delay_from_html(x)?,
         },
-        ref x if x.contains("Završio je vožnju") => TrainStatus::Finished {
+        ref x if x.contains("Završio vožnju") => TrainStatus::Finished {
             minutes_late: get_delay_from_html(x).unwrap_or(0),
         },
         _ => TrainStatus::WaitingForDeparture,
