@@ -89,8 +89,6 @@ async fn save_routes(
         .map(|r| r.clone())
         .collect_vec();
 
-    info!("ID IS HERE {:?}", saved_route_nums);
-
     Ok(saved_routes)
 }
 
