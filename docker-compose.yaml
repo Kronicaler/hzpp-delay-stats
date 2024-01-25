@@ -13,9 +13,11 @@ services:
     image: postgres
     restart: always
     environment:
-      POSTGRES_PASSWORD: example
+      POSTGRES_PASSWORD: hzpostgres
     ports:
       - 5432:5432 
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
 
   adminer:
     image: adminer
@@ -28,7 +30,7 @@ services:
     container_name: hzpp_delay_stats
     environment:
       - OTLP_ENDPOINT=http://jaeger:4317
-      - DATABASE_URL=postgresql://postgres:example@db/hzpp
+      - DATABASE_URL=postgresql://postgres:example@db/hzpostgres
       - RUST_LOG=error,hzpp_delay_stats=info
     build:
       context: ./
