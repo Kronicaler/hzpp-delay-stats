@@ -195,7 +195,7 @@ fn get_delay_from_html(html: &String) -> Result<i32, anyhow::Error> {
         .find(" min.")
         .ok_or_else(|| anyhow!("couldn't find min."))?;
 
-    let result: i32 = html[x..y].parse()?;
+    let result: i32 = html[x..y].trim().parse()?;
 
     Ok(result)
 }
