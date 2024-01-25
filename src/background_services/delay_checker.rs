@@ -73,7 +73,7 @@ async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), any
             TrainStatus::WaitingForDeparture => {}
             TrainStatus::OnTime => {
                 if route.real_start_time.is_none() {
-                    route.real_start_time = Some(route.expected_end_time);
+                    route.real_start_time = Some(route.expected_start_time);
                     update_route(&route, &pool).await?;
                 }
             }
