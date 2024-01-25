@@ -19,12 +19,12 @@ pub async fn check_delays(
 ) -> Result<(), anyhow::Error> {
     let mut buffer: Vec<Vec<RouteDb>> = vec![];
 
-    spawn_route_delay_tasks(get_unfinished_routes(pool).await?, pool);
+    spawn_route_delay_tasks(get_unfinished_routes(pool).await?, pool).await;
 
     while delay_checker_receiver.recv_many(&mut buffer, 32).await != 0 {
         let routes = buffer.drain(..).flatten().collect_vec();
 
-        spawn_route_delay_tasks(routes, pool);
+        spawn_route_delay_tasks(routes, pool).await;
     }
 
     info!("Channel closed");
@@ -32,11 +32,18 @@ pub async fn check_delays(
     Ok(())
 }
 
-fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
-    for route in routes {
-        let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
-        if secs_until_start < 0 {
+async fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
+    for mut route in routes {
+        let secs_until_end = route.expected_end_time.timestamp() - Utc::now().timestamp();
+        if secs_until_end < 0 {
             info!("Got route in the past, discarding it");
+
+            route.real_end_time = route.real_end_time.or(Some(route.expected_end_time));
+            route.real_start_time = route.real_start_time.or(Some(route.expected_start_time));
+            if let Err(e) = update_route_real_times(&route, pool).await {
+                error!("error when saving old route {}", e);
+            }
+
             continue;
         }
 
@@ -121,20 +128,20 @@ async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), any
             TrainStatus::OnTime => {
                 if route.real_start_time.is_none() {
                     route.real_start_time = Some(route.expected_start_time);
-                    update_route(&route, &pool).await?;
+                    update_route_real_times(&route, &pool).await?;
                 }
             }
             TrainStatus::Late { minutes_late: _ } => {
                 if route.real_start_time.is_none() {
                     route.real_start_time =
                         Some(Utc::now().duration_round(chrono::Duration::minutes(1))?);
-                    update_route(&route, &pool).await?;
+                    update_route_real_times(&route, &pool).await?;
                 }
             }
             TrainStatus::Finished { minutes_late: _ } => {
                 route.real_end_time =
                     Some(Utc::now().duration_round(chrono::Duration::minutes(1))?);
-                update_route(&route, &pool).await?;
+                update_route_real_times(&route, &pool).await?;
                 return Ok(());
             }
         };
@@ -201,7 +208,7 @@ fn get_delay_from_html(html: &String) -> Result<i32, anyhow::Error> {
 }
 
 #[tracing::instrument(err)]
-async fn update_route(route: &RouteDb, pool: &Pool<Postgres>) -> Result<(), anyhow::Error> {
+async fn update_route_real_times(route: &RouteDb, pool: &Pool<Postgres>) -> Result<(), anyhow::Error> {
     query!(
         "
     UPDATE routes
