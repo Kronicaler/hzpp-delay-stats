@@ -1,4 +1,4 @@
-FROM rust:slim-buster AS builder
+FROM rust:slim-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install --no-install-recommends -y pkg-config openssl libssl-dev build-essential wget && rm -rf /var/lib/apt/lists/*;
