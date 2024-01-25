@@ -13,7 +13,7 @@ use tracing::{error, info, info_span, Instrument};
 #[tracing::instrument(err)]
 pub async fn get_todays_routes(
     pool: sqlx::Pool<Postgres>,
-    delay_checker_sender: Sender<RouteDb>,
+    delay_checker_sender: Sender<Vec<RouteDb>>,
 ) -> anyhow::Result<()> {
     let today = chrono::Local::now().with_timezone(&Zagreb);
 
@@ -31,19 +31,8 @@ pub async fn get_todays_routes(
         .collect_vec();
 
     save_routes(&routes, pool.clone()).await?;
-    send_routes_to_delay_checker(routes, delay_checker_sender).await?;
 
-    Ok(())
-}
-
-#[tracing::instrument(err)]
-async fn send_routes_to_delay_checker(
-    routes: Vec<RouteDb>,
-    delay_checker_sender: Sender<RouteDb>,
-) -> anyhow::Result<()> {
-    for route in routes {
-        delay_checker_sender.send(route).await?;
-    }
+    delay_checker_sender.send(routes).await?;
 
     Ok(())
 }

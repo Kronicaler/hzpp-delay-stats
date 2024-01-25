@@ -3,6 +3,7 @@
 
 use crate::model::hzpp_api_model::HzppRoute;
 use anyhow::Result;
+use background_services::delay_checker::check_delays;
 use background_services::route_fetcher::get_todays_routes;
 use dotenvy::dotenv;
 use itertools::Itertools;
@@ -18,6 +19,8 @@ use std::num::ParseIntError;
 use std::{fs, thread, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc::channel;
+use tokio::time::sleep;
+use tokio::{select, spawn};
 use tracing::{error, info, instrument, span, warn, Level};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -27,7 +30,7 @@ use tracing_subscriber::{EnvFilter, Registry};
 mod background_services;
 mod model;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     _ = dotenv();
 
@@ -73,27 +76,33 @@ async fn main() -> Result<()> {
 
     let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
 
-    let (delay_checker_sender, delay_checker_receiver) = channel::<RouteDb>(1024);
+    let (delay_checker_sender, mut delay_checker_receiver) = channel::<Vec<RouteDb>>(32);
 
-    get_todays_routes(pool.clone(), delay_checker_sender.clone()).await?;
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    let route_fetcher = spawn(async move {
+        loop {
+            if let Err(e) = get_todays_routes(pool.clone(), delay_checker_sender.clone()).await {
+                error!("{e}");
+                sleep(Duration::from_secs(60)).await;
+            } else {
+                sleep(Duration::from_secs(60 * 60)).await;
+            }
+        }
+    });
+
+    let delay_checker = spawn(async move {
+        loop {
+            if let Err(e) = check_delays(&mut delay_checker_receiver).await {
+                error!("{e}");
+            }
+        }
+    });
+
+    select! {
+        _ = route_fetcher =>{},
+        _ = delay_checker =>{},
+    }
 
     Ok(())
-    // let sched = JobScheduler::new().await?;
-
-    // sched
-    //     .add(Job::new_async("1/10 * * * * * *", |_uuid, _lock| {
-    //         Box::pin(async move {
-    //             _ = fetch_routes_job().await;
-    //         })
-    //     })?)
-    //     .await?;
-
-    // sched.start().await?;
-
-    // loop {
-    //     tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
-    // }
 }
 
 #[instrument(err)]
