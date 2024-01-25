@@ -12,7 +12,7 @@ use tracing::{error, info, info_span, Instrument};
 /// If a duplicate route is already in the DB then it's discarded.
 #[tracing::instrument(err)]
 pub async fn get_todays_routes(
-    pool: sqlx::Pool<Postgres>,
+    pool: &sqlx::Pool<Postgres>,
     delay_checker_sender: Sender<Vec<RouteDb>>,
 ) -> anyhow::Result<()> {
     let today = chrono::Local::now().with_timezone(&Zagreb);

@@ -78,9 +78,12 @@ async fn main() -> Result<()> {
 
     let (delay_checker_sender, mut delay_checker_receiver) = channel::<Vec<RouteDb>>(32);
 
+    let route_fetcher_pool = pool.clone();
     let route_fetcher = spawn(async move {
         loop {
-            if let Err(e) = get_todays_routes(pool.clone(), delay_checker_sender.clone()).await {
+            if let Err(e) =
+                get_todays_routes(&route_fetcher_pool, delay_checker_sender.clone()).await
+            {
                 error!("{e}");
                 sleep(Duration::from_secs(60)).await;
             } else {
@@ -91,7 +94,7 @@ async fn main() -> Result<()> {
 
     let delay_checker = spawn(async move {
         loop {
-            if let Err(e) = check_delays(&mut delay_checker_receiver).await {
+            if let Err(e) = check_delays(&mut delay_checker_receiver, &pool).await {
                 error!("{e}");
             }
         }
