@@ -108,7 +108,7 @@ async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), any
         return Ok(());
     }
 
-    sleep(Duration::from_secs(secs_until_start.try_into()?))
+    sleep(Duration::from_secs(secs_until_start.try_into().unwrap_or(0)))
         .instrument(info_span!("Waiting for route to start"))
         .await;
 
@@ -209,7 +209,10 @@ fn get_delay_from_html(html: &String) -> Result<i32, anyhow::Error> {
 }
 
 #[tracing::instrument(err)]
-async fn update_route_real_times(route: &RouteDb, pool: &Pool<Postgres>) -> Result<(), anyhow::Error> {
+async fn update_route_real_times(
+    route: &RouteDb,
+    pool: &Pool<Postgres>,
+) -> Result<(), anyhow::Error> {
     query!(
         "
     UPDATE routes
