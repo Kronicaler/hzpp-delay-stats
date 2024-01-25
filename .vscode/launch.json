@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'hzpp_delays'",
+            "name": "Debug executable 'hzpp_delay_stats'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=hzpp_delays",
-                    "--package=hzpp_delays"
+                    "--bin=hzpp_delay_stats",
+                    "--package=hzpp_delay_stats"
                 ],
                 "filter": {
-                    "name": "hzpp_delays",
+                    "name": "hzpp_delay_stats",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'hzpp_delays'",
+            "name": "Debug unit tests in executable 'hzpp_delay_stats'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=hzpp_delays",
-                    "--package=hzpp_delays"
+                    "--bin=hzpp_delay_stats",
+                    "--package=hzpp_delay_stats"
                 ],
                 "filter": {
-                    "name": "hzpp_delays",
+                    "name": "hzpp_delay_stats",
                     "kind": "bin"
                 }
             },

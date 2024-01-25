@@ -22,6 +22,6 @@ FROM debian:bookworm-slim as release
 RUN apt-get update && apt-get install --no-install-recommends -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*;
 
 WORKDIR /app
-COPY --from=builder /app/target/release/hzpp_delays /app/hzpp_delays
+COPY --from=builder /app/target/release/hzpp_delay_stats /app/hzpp_delay_stats
 
-ENTRYPOINT ["/app/hzpp_delays"]
+ENTRYPOINT ["/app/hzpp_delay_stats"]

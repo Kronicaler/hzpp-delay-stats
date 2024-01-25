@@ -122,8 +122,10 @@ async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, anyhow::Error> 
 
     let delay = match content {
         ref x if x.contains("Vlak ceka polazak") => TrainStatus::WaitingForDeparture,
-        ref x if x.contains("Vlak je redovit") && !x.contains("Završio je vožnju") => TrainStatus::OnTime,
-        ref x if x.contains("Kasni") && !x.contains("Završio je vožnju")  => TrainStatus::Late {
+        ref x if x.contains("Vlak je redovit") && !x.contains("Završio je vožnju") => {
+            TrainStatus::OnTime
+        }
+        ref x if x.contains("Kasni") && !x.contains("Završio je vožnju") => TrainStatus::Late {
             minutes_late: get_delay_from_html(x)?,
         },
         ref x if x.contains("Završio je vožnju") => TrainStatus::Finished {
@@ -135,6 +137,7 @@ async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, anyhow::Error> 
     Ok(delay)
 }
 
+#[tracing::instrument(ret, err)]
 fn get_delay_from_html(html: &String) -> Result<i32, anyhow::Error> {
     let x = html
         .find("Kasni ")

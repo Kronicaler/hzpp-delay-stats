@@ -3,7 +3,7 @@ version: '3.1'
 
 services:
   jaeger:
-    image: jaegertracing/all-in-one:1.49
+    image: jaegertracing/all-in-one
     restart: unless-stopped
     ports:
       - 16686:16686
@@ -21,4 +21,16 @@ services:
     image: adminer
     restart: always
     ports:
-      - 8080:8080
+      - 8081:8080
+
+  hzpp_delay_stats:
+    image: kronicaler/hzpp_delay_stats
+    container_name: hzpp_delay_stats
+    environment:
+      - OTLP_ENDPOINT=
+      - DATABASE_URL=mysql://root:${DB_PASS}@mariadb/markov_bot
+      - RUST_LOG=error,hzpp_delay_stats=info
+    build:
+      context: ./
+      dockerfile: dockerfile
+    restart: unless-stopped

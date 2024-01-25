@@ -41,12 +41,12 @@ async fn main() -> Result<()> {
         .with_config(
             Config::default().with_resource(Resource::new(vec![KeyValue::new(
                 "service.name",
-                "HZPP_delays",
+                "HZPP_delay_stats",
             )])),
         )
         .build();
 
-    let tracer = provider.tracer("HZPP_delays");
+    let tracer = provider.tracer("HZPP_delay_stats");
 
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
 
-    let appender = tracing_appender::rolling::daily("./logs", "hzpp_delays.log");
+    let appender = tracing_appender::rolling::daily("./logs", "hzpp_delay_stats.log");
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(appender);
 
     // A layer that logs events to rolling files.
