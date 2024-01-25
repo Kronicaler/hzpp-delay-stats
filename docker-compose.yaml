@@ -30,7 +30,7 @@ services:
     container_name: hzpp_delay_stats
     environment:
       - OTLP_ENDPOINT=http://jaeger:4317
-      - DATABASE_URL=postgresql://postgres:example@db/hzpostgres
+      - DATABASE_URL=postgresql://postgres:hzpostgres@db/hzpp
       - RUST_LOG=error,hzpp_delay_stats=info
     build:
       context: ./
