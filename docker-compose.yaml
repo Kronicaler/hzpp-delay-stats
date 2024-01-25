@@ -27,8 +27,8 @@ services:
     image: kronicaler/hzpp_delay_stats
     container_name: hzpp_delay_stats
     environment:
-      - OTLP_ENDPOINT=
-      - DATABASE_URL=mysql://root:${DB_PASS}@mariadb/markov_bot
+      - OTLP_ENDPOINT=http://jaeger:4317
+      - DATABASE_URL=postgresql://postgres:example@db/hzpp
       - RUST_LOG=error,hzpp_delay_stats=info
     build:
       context: ./

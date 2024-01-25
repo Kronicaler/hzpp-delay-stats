@@ -3,8 +3,8 @@ use crate::model::{db_model::RouteDb, hzpp_api_model::HzppRoute};
 use chrono::DateTime;
 use chrono_tz::{Europe::Zagreb, Tz};
 use itertools::Itertools;
-use sqlx::{Postgres, QueryBuilder};
-use std::backtrace::Backtrace;
+use sqlx::{postgres::PgRow, Postgres, QueryBuilder, Row};
+use std::{backtrace::Backtrace, collections::HashSet, hash::RandomState};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, info_span, Instrument};
 
@@ -30,15 +30,19 @@ pub async fn get_todays_routes(
         })
         .collect_vec();
 
-    save_routes(&routes, pool.clone()).await?;
+    let saved_routes = save_routes(&routes, pool.clone()).await?;
 
-    delay_checker_sender.send(routes).await?;
+    delay_checker_sender.send(saved_routes).await?;
 
     Ok(())
 }
 
+/// Returns the saved routes. If a route is already present in the DB it isn't saved
 #[tracing::instrument(err)]
-async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> anyhow::Result<()> {
+async fn save_routes(
+    routes: &Vec<RouteDb>,
+    pool: sqlx::Pool<Postgres>,
+) -> Result<Vec<RouteDb>, anyhow::Error> {
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO routes (id,
         route_number,
@@ -63,13 +67,31 @@ async fn save_routes(routes: &Vec<RouteDb>, pool: sqlx::Pool<Postgres>) -> anyho
             .push_bind(route.expected_end_time);
     });
 
-    query_builder.push(" ON CONFLICT ( expected_start_time, id ) DO NOTHING");
+    query_builder
+        .push(" ON CONFLICT ( expected_start_time, id ) DO NOTHING RETURNING route_number");
 
     let query = query_builder.build();
 
-    query.execute(&pool).await?;
+    let saved_route_nums = query
+        .map(|row: PgRow| {
+            let route_number: i32 = row.try_get(0).unwrap();
 
-    Ok(())
+            route_number
+        })
+        .fetch_all(&pool)
+        .await?;
+
+    let saved_route_nums: HashSet<i32, RandomState> = HashSet::from_iter(saved_route_nums);
+
+    let saved_routes = routes
+        .iter()
+        .filter(|r| saved_route_nums.contains(&r.route_number))
+        .map(|r| r.clone())
+        .collect_vec();
+
+    info!("ID IS HERE {:?}", saved_route_nums);
+
+    Ok(saved_routes)
 }
 
 #[tracing::instrument(err)]
