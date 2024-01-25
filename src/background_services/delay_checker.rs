@@ -3,10 +3,10 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use chrono::{DurationRound, Utc};
+use chrono::{DurationRound, NaiveDateTime, Utc};
 use itertools::Itertools;
 use reqwest::{header::HeaderValue, Client, Method, Url};
-use sqlx::{query, Pool, Postgres};
+use sqlx::{postgres::PgRow, query, Pool, Postgres, Row};
 use tokio::{spawn, sync::mpsc::Receiver, time::sleep};
 use tracing::{error, info, info_span, Instrument};
 
@@ -19,24 +19,71 @@ pub async fn check_delays(
 ) -> Result<(), anyhow::Error> {
     let mut buffer: Vec<Vec<RouteDb>> = vec![];
 
+    spawn_route_delay_tasks(get_unfinished_routes(pool).await?, pool);
+
     while delay_checker_receiver.recv_many(&mut buffer, 32).await != 0 {
         let routes = buffer.drain(..).flatten().collect_vec();
 
-        for route in routes {
-            let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
-            if secs_until_start < 0 {
-                info!("Got route in the past, discarding it");
-                continue;
-            }
-
-            let delay_pool = pool.clone();
-            spawn(check_delay(route, delay_pool));
-        }
+        spawn_route_delay_tasks(routes, pool);
     }
 
     info!("Channel closed");
 
     Ok(())
+}
+
+fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
+    for route in routes {
+        let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
+        if secs_until_start < 0 {
+            info!("Got route in the past, discarding it");
+            continue;
+        }
+
+        let delay_pool = pool.clone();
+        spawn(check_delay(route, delay_pool));
+    }
+}
+
+async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, anyhow::Error> {
+    let x = query(
+        "SELECT 
+        id,
+        route_number,
+        source,
+        destination,
+        bikes_allowed,
+        wheelchair_accessible,
+        route_type,
+        expected_start_time,
+        expected_end_time,
+        real_start_time,
+        real_end_time
+        from routes where real_end_time IS NULL",
+    )
+    .map(|row: PgRow| RouteDb {
+        id: row.try_get(0).unwrap(),
+        route_number: row.try_get(1).unwrap(),
+        source: row.try_get(2).unwrap(),
+        destination: row.try_get(3).unwrap(),
+        bikes_allowed: row.try_get::<i16, usize>(4).unwrap().try_into().unwrap(),
+        wheelchair_accessible: row.try_get::<i16, usize>(5).unwrap().try_into().unwrap(),
+        route_type: row.try_get::<i16, usize>(6).unwrap().try_into().unwrap(),
+        expected_start_time: row.try_get::<NaiveDateTime, usize>(7).unwrap().and_utc(),
+        expected_end_time: row.try_get::<NaiveDateTime, usize>(8).unwrap().and_utc(),
+        real_start_time: row
+            .try_get::<Option<NaiveDateTime>, usize>(9)
+            .unwrap()
+            .map(|dt| dt.and_utc()),
+        real_end_time: row
+            .try_get::<Option<NaiveDateTime>, usize>(10)
+            .unwrap()
+            .map(|dt| dt.and_utc()),
+    })
+    .fetch_all(pool)
+    .await?;
+
+    return Ok(x);
 }
 
 #[tracing::instrument(err)]

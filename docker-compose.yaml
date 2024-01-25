@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - 16687:16686
+      - 4317:4317
 
   db:
     image: postgres
@@ -14,6 +15,8 @@ services:
     environment:
       POSTGRES_PASSWORD: hzpostgres
       POSTGRES_DB: hzpp
+    ports:
+      - 5432:5432 
     volumes:
       - ./postgres:/var/lib/postgresql/data
 

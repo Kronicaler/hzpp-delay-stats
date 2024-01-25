@@ -17,7 +17,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
 use tokio::{select, spawn};
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -29,55 +29,17 @@ mod model;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     _ = dotenv();
-    setup_tracing();
-
-    let db_url = env::var("DATABASE_URL").unwrap();
-
-    let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-
-    let (delay_checker_sender, mut delay_checker_receiver) = channel::<Vec<RouteDb>>(32);
-
-    let route_fetcher_pool = pool.clone();
-    let route_fetcher = spawn(async move {
-        loop {
-            if let Err(e) =
-                get_todays_routes(&route_fetcher_pool, delay_checker_sender.clone()).await
-            {
-                error!("{e}");
-                sleep(Duration::from_secs(60)).await;
-            } else {
-                sleep(Duration::from_secs(60 * 60)).await;
-            }
-        }
-    });
-
-    let delay_checker = spawn(async move {
-        loop {
-            if let Err(e) = check_delays(&mut delay_checker_receiver, &pool).await {
-                error!("{e}");
-            }
-        }
-    });
-
-    select! {
-        _ = route_fetcher =>{},
-        _ = delay_checker =>{},
-    }
-
-    Ok(())
-}
-
-fn setup_tracing() {
+    info!("OTLP_ENDPOINT: {}", dotenvy::var("OTLP_ENDPOINT").unwrap());
     let provider = TracerProvider::builder()
         .with_batch_exporter(
             SpanExporterBuilder::Tonic(
                 TonicExporterBuilder::default()
-                    .with_timeout(Duration::from_millis(500))
+                    .with_timeout(Duration::from_millis(1000))
                     .with_endpoint(
                         dotenvy::var("OTLP_ENDPOINT")
                             .unwrap_or("http://localhost:4317".to_string()),
-                    ),
+                    )
+                    .with_protocol(opentelemetry_otlp::Protocol::Grpc),
             )
             .build_span_exporter()
             .unwrap(),
@@ -116,4 +78,40 @@ fn setup_tracing() {
         .with(file_log)
         .with(env_filter)
         .init();
+
+    let db_url = env::var("DATABASE_URL").unwrap();
+
+    let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+    let (delay_checker_sender, mut delay_checker_receiver) = channel::<Vec<RouteDb>>(32);
+
+    let route_fetcher_pool = pool.clone();
+    let route_fetcher = spawn(async move {
+        loop {
+            if let Err(e) =
+                get_todays_routes(&route_fetcher_pool, delay_checker_sender.clone()).await
+            {
+                error!("{e}");
+                sleep(Duration::from_secs(60)).await;
+            } else {
+                sleep(Duration::from_secs(60 * 60)).await;
+            }
+        }
+    });
+
+    let delay_checker = spawn(async move {
+        loop {
+            if let Err(e) = check_delays(&mut delay_checker_receiver, &pool).await {
+                error!("{e}");
+            }
+        }
+    });
+
+    select! {
+        _ = route_fetcher =>{},
+        _ = delay_checker =>{},
+    }
+
+    Ok(())
 }

@@ -79,7 +79,7 @@ impl RouteDb {
     }
 }
 
-#[derive(Copy, Clone, Debug, sqlx::Type)]
+#[derive(Copy, Clone, Debug)]
 pub enum BikesAllowed {
     NotAllowed = 0 | 2, // API shenanigans
     Allowed = 1,
@@ -89,6 +89,18 @@ impl TryFrom<i32> for BikesAllowed {
     type Error = Error;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 | 2 => Ok(BikesAllowed::NotAllowed),
+            1 => Ok(BikesAllowed::Allowed),
+            _ => bail!("Got wrong value when trying to convert u8 {value} to BikesAllowed"),
+        }
+    }
+}
+
+impl TryFrom<i16> for BikesAllowed {
+    type Error = Error;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
         match value {
             0 | 2 => Ok(BikesAllowed::NotAllowed),
             1 => Ok(BikesAllowed::Allowed),
@@ -121,10 +133,34 @@ impl TryFrom<i32> for RouteType {
     }
 }
 
+impl TryFrom<i16> for RouteType {
+    type Error = Error;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            2 => Ok(RouteType::Train),
+            3 => Ok(RouteType::Bus),
+            _ => bail!("Got wrong value when trying to convert u8 {value} to BikesAllowed"),
+        }
+    }
+}
+
 impl TryFrom<i32> for WheelchairAccessible {
     type Error = Error;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 | 2 => Ok(WheelchairAccessible::NotAccessible),
+            1 => Ok(WheelchairAccessible::Accessible),
+            _ => bail!("Got wrong value when trying to convert u8 {value} to WheelchairAccessible"),
+        }
+    }
+}
+
+impl TryFrom<i16> for WheelchairAccessible {
+    type Error = Error;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
         match value {
             0 | 2 => Ok(WheelchairAccessible::NotAccessible),
             1 => Ok(WheelchairAccessible::Accessible),
