@@ -195,7 +195,7 @@ async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, anyhow::Error> 
     Ok(delay)
 }
 
-#[tracing::instrument(ret, err)]
+#[tracing::instrument(ret)]
 fn get_delay_from_html(html: &String) -> Result<i32, anyhow::Error> {
     let x = html
         .find("Kasni ")
