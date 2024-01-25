@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use chrono::{DurationRound, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, Utc};
 use itertools::Itertools;
 use reqwest::{header::HeaderValue, Client, Method, Url};
 use sqlx::{postgres::PgRow, query, Pool, Postgres, Row};
@@ -108,9 +108,11 @@ async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), any
         return Ok(());
     }
 
-    sleep(Duration::from_secs(secs_until_start.try_into().unwrap_or(0)))
-        .instrument(info_span!("Waiting for route to start"))
-        .await;
+    sleep(Duration::from_secs(
+        secs_until_start.try_into().unwrap_or(0),
+    ))
+    .instrument(info_span!("Waiting for route to start"))
+    .await;
 
     loop {
         let delay: TrainStatus = match get_route_delay(&route).await {
@@ -132,16 +134,17 @@ async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), any
                     update_route_real_times(&route, &pool).await?;
                 }
             }
-            TrainStatus::Late { minutes_late: _ } => {
+            TrainStatus::Late { minutes_late } => {
                 if route.real_start_time.is_none() {
-                    route.real_start_time =
-                        Some(Utc::now().duration_round(chrono::Duration::minutes(1))?);
+                    route.real_start_time = Some(
+                        route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
+                    );
                     update_route_real_times(&route, &pool).await?;
                 }
             }
-            TrainStatus::Finished { minutes_late: _ } => {
+            TrainStatus::Finished { minutes_late } => {
                 route.real_end_time =
-                    Some(Utc::now().duration_round(chrono::Duration::minutes(1))?);
+                    Some(route.expected_end_time + chrono::Duration::minutes(minutes_late.into()));
                 update_route_real_times(&route, &pool).await?;
                 return Ok(());
             }
