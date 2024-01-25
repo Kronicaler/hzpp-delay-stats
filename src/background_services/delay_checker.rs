@@ -96,13 +96,14 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
 #[tracing::instrument(err)]
 async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
     let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
+    let secs_until_end = route.expected_end_time.timestamp() - Utc::now().timestamp();
 
     info!(
         "Checking delays for route {:#?} starting in {}",
         route, secs_until_start
     );
 
-    if secs_until_start < 0 {
+    if secs_until_end < 0 {
         info!("Got route in the past, discarding it");
         return Ok(());
     }
