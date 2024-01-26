@@ -93,7 +93,7 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
     return Ok(x);
 }
 
-#[tracing::instrument(err)]
+#[tracing::instrument(err, fields(route_number=route.route_number))]
 async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
     let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
     let secs_until_end = route.expected_end_time.timestamp() - Utc::now().timestamp();
