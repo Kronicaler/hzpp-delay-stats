@@ -48,7 +48,7 @@ async fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
         }
 
         let delay_pool = pool.clone();
-        spawn(check_delay(route, delay_pool));
+        spawn(monitor_route(route, delay_pool));
     }
 }
 
@@ -93,13 +93,12 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
     return Ok(x);
 }
 
-#[tracing::instrument(err, fields(route_number=route.route_number))]
-async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
+async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
     let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
     let secs_until_end = route.expected_end_time.timestamp() - Utc::now().timestamp();
 
     info!(
-        "Checking delays for route {:#?} starting in {}",
+        "Monitoring route {:#?} starting in {}",
         route, secs_until_start
     );
 
@@ -108,12 +107,19 @@ async fn check_delay(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), any
         return Ok(());
     }
 
+    info!("Waiting {} seconds for route to start", secs_until_start);
     sleep(Duration::from_secs(
         secs_until_start.try_into().unwrap_or(0),
     ))
-    .instrument(info_span!("Waiting for route to start"))
     .await;
 
+    check_delay_until_route_completion(route, pool).await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(err, fields(route_number=route.route_number))]
+async fn check_delay_until_route_completion(mut route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
     loop {
         let delay: TrainStatus = match get_route_delay(&route).await {
             Ok(it) => it,
