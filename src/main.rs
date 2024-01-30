@@ -25,6 +25,7 @@ use tracing_subscriber::{EnvFilter, Registry};
 
 mod background_services;
 mod model;
+mod utils;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
