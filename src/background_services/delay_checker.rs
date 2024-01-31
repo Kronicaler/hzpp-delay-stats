@@ -144,15 +144,18 @@ async fn check_delay_until_route_completion(
         };
 
         match (delay.delay, delay.status) {
-            (Delay::WaitingToDepart, Status::DepartingFromStation(_)) => {} // wait for train to start
+            (Delay::WaitingToDepart, Status::DepartingFromStation(_) | Status::Arriving(_)) => {} // wait for train to start
             (Delay::WaitingToDepart, Status::Formed(_)) => {} // wait for train to start
-            (Delay::OnTime, Status::DepartingFromStation(_)) => {
+            (Delay::OnTime, Status::DepartingFromStation(_) | Status::Arriving(_)) => {
                 if route.real_start_time.is_none() {
                     route.real_start_time = Some(route.expected_start_time);
                     update_route_real_times(&route, &pool).await?;
                 }
             }
-            (Delay::Late { minutes_late }, Status::DepartingFromStation(_)) => {
+            (
+                Delay::Late { minutes_late },
+                Status::DepartingFromStation(_) | Status::Arriving(_),
+            ) => {
                 if route.real_start_time.is_none() {
                     route.real_start_time = Some(
                         route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
@@ -252,7 +255,12 @@ fn parse_delay_html(html: String) -> Result<TrainStatus, ParseHtmlError> {
     let status_line = *lines
         .iter()
         .enumerate()
-        .filter(|l| l.1.contains("Završio") || l.1.contains("Odlazak") || l.1.contains("Formiran"))
+        .filter(|l| {
+            l.1.contains("Završio")
+                || l.1.contains("Odlazak")
+                || l.1.contains("Formiran")
+                || l.1.contains("Dolazak")
+        })
         .collect_vec()
         .first()
         .ok_or_else(|| anyhow!("Couldn't locate status line"))?;
@@ -275,6 +283,7 @@ fn parse_delay_html(html: String) -> Result<TrainStatus, ParseHtmlError> {
         ref sl if sl.1.contains("Završio") => Status::FinishedDriving(status_datetime),
         ref sl if sl.1.contains("Odlazak") => Status::DepartingFromStation(status_datetime),
         ref sl if sl.1.contains("Formiran") => Status::Formed(status_datetime),
+        ref sl if sl.1.contains("Dolazak") => Status::Arriving(status_datetime),
         _ => return Err(anyhow!("Couldn't construct status"))?,
     };
 
@@ -327,9 +336,10 @@ enum Delay {
 
 #[derive(Copy, Clone, Debug)]
 enum Status {
-    DepartingFromStation(DateTime<Utc>),
-    FinishedDriving(DateTime<Utc>),
     Formed(DateTime<Utc>),
+    DepartingFromStation(DateTime<Utc>),
+    Arriving(DateTime<Utc>),
+    FinishedDriving(DateTime<Utc>),
 }
 
 #[tracing::instrument(err)]
