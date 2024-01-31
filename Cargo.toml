@@ -6,6 +6,9 @@ edition = "2021"
 [profile.dev.package.sqlx-macros]
 opt-level = 3
 
+[profile.release]
+debug = "line-tables-only"
+
 [dependencies]
 # tracing and opentelemetry
 opentelemetry = "0.21"
