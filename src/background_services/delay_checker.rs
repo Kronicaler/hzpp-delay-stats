@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use chrono_tz::Europe::Zagreb;
 use itertools::Itertools;
@@ -127,20 +127,24 @@ async fn check_delay_until_route_completion(
     loop {
         let delay: TrainStatus = match get_route_delay(&route).await {
             Ok(it) => it,
-            Err(err) => {
-                error!("{:?}", err.context("error fetching delay"));
-                sleep(Duration::from_secs(60))
-                    .instrument(info_span!("Waiting 60 seconds"))
-                    .await;
-                continue;
-            }
+            Err(err) => match err {
+                GetRouteError::TrainNotEvidented => {
+                    info!("train isn't evidented"); // sometimes the API is just shit
+                    break Ok(());
+                }
+                GetRouteError::Other(err) => {
+                    error!("{:?}", err.context("error fetching delay"));
+                    sleep(Duration::from_secs(60))
+                        .instrument(info_span!("Waiting 60 seconds"))
+                        .await;
+                    continue;
+                }
+            },
         };
-
+        
         match (delay.delay, delay.status) {
             (Delay::WaitingToDepart, Status::DepartingFromStation(_)) => {} // wait for train to start
-            (Delay::WaitingToDepart, Status::FinishedDriving(_)) => {
-                bail!("Got WaitingToDepart and FinishedDriving")
-            }
+            (Delay::WaitingToDepart, Status::Formed(_)) => {}, // wait for train to start
             (Delay::OnTime, Status::DepartingFromStation(_)) => {
                 if route.real_start_time.is_none() {
                     route.real_start_time = Some(route.expected_start_time);
@@ -166,6 +170,7 @@ async fn check_delay_until_route_completion(
                 update_route_real_times(&route, &pool).await?;
                 return Ok(());
             }
+            _ => bail!("invalid variant"),
         }
 
         sleep(Duration::from_secs(60))
@@ -175,35 +180,62 @@ async fn check_delay_until_route_completion(
 }
 
 #[tracing::instrument(ret, err)]
-async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, anyhow::Error> {
+async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, GetRouteError> {
     let url = format!(
         "https://traindelay.hzpp.hr/train/delay?trainId={}",
         route.route_number
     );
 
-    let mut request = reqwest::Request::new(Method::GET, Url::parse(&url)?);
+    let mut request =
+        reqwest::Request::new(Method::GET, Url::parse(&url).context("Couldn't parse url")?);
     request.headers_mut().append("Authorization", 
     HeaderValue::from_static("Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoenBwLXBsYW5lciIsImlhdCI6MTY3NDEzNzM3NH0.a6FzxGKyUfHzLVuGP242MFWF6EspvJl1LTHwEVeMIsY"));
 
     let response = Client::new()
         .execute(request)
         .instrument(info_span!("Fetching delay"))
-        .await?
-        .error_for_status()?;
+        .await
+        .context("error fetching html")?
+        .error_for_status()
+        .context("error status fetching html")?;
 
     let content = response
         .text()
         .instrument(info_span!("Reading body of response"))
-        .await?;
+        .await
+        .context("Error getting response text")?;
 
-    let status = parse_delay_html2(content)?;
+    let status = match parse_delay_html(content) {
+        Ok(status) => status,
+        Err(err) => match err {
+            ParseHtmlError::TrainNotEvidented => return Err(GetRouteError::TrainNotEvidented),
+            ParseHtmlError::Other(e) => return Err(e)?,
+        },
+    };
 
     Ok(status)
 }
 
+#[derive(thiserror::Error, Debug)]
+enum GetRouteError {
+    #[error("train isn't evidented")]
+    TrainNotEvidented,
+
+    #[error("error getting route delay")]
+    Other(#[from] anyhow::Error),
+}
+
 #[tracing::instrument(ret, err)]
-fn parse_delay_html2(html: String) -> Result<TrainStatus, anyhow::Error> {
+fn parse_delay_html(html: String) -> Result<TrainStatus, ParseHtmlError> {
     let lines = html.lines().collect_vec();
+
+    if lines
+        .get(14)
+        .ok_or_else(|| anyhow!("couldn't get line 14"))?
+        .contains("Vlak nije u evidenciji")
+    {
+        return Err(ParseHtmlError::TrainNotEvidented)?;
+    }
 
     let station_line = *lines
         .iter()
@@ -219,7 +251,7 @@ fn parse_delay_html2(html: String) -> Result<TrainStatus, anyhow::Error> {
     let status_line = *lines
         .iter()
         .enumerate()
-        .filter(|l| l.1.contains("Završio") || l.1.contains("Odlazak"))
+        .filter(|l| l.1.contains("Završio") || l.1.contains("Odlazak") || l.1.contains("Formiran"))
         .collect_vec()
         .first()
         .ok_or_else(|| anyhow!("Couldn't locate status line"))?;
@@ -227,8 +259,10 @@ fn parse_delay_html2(html: String) -> Result<TrainStatus, anyhow::Error> {
         .get(status_line.0 + 1)
         .ok_or_else(|| anyhow!("couldn't locate status time line"))?;
 
-    let status_date = NaiveDate::parse_from_str(&status_time_line[..8], "%d.%m.%y.")?;
-    let status_time = NaiveTime::parse_from_str(&status_time_line[12..16], "%H:%M")?;
+    let status_date = NaiveDate::parse_from_str(&status_time_line[..9], "%d.%m.%y.")
+        .context("Couldn't parse status_date")?;
+    let status_time = NaiveTime::parse_from_str(&status_time_line[12..17], "%H:%M")
+        .context("Couldn't parse status_time")?;
     let status_datetime = status_date
         .and_time(status_time)
         .and_local_timezone(Zagreb)
@@ -239,23 +273,25 @@ fn parse_delay_html2(html: String) -> Result<TrainStatus, anyhow::Error> {
     let status = match status_line {
         ref sl if sl.1.contains("Završio") => Status::FinishedDriving(status_datetime),
         ref sl if sl.1.contains("Odlazak") => Status::DepartingFromStation(status_datetime),
-        _ => bail!("Couldn't construct status"),
+        ref sl if sl.1.contains("Formiran") => Status::Formed(status_datetime),
+        _ => return Err(anyhow!("Couldn't construct status"))?,
     };
 
     let delay = if html.contains("Kasni") {
         let minutes_late: i32 = str_between_str(&html, "Kasni", "min.")
             .ok_or_else(|| anyhow!("Couldn't find delay number"))?
             .trim()
-            .parse()?;
+            .parse()
+            .context("Couldn't parse delay number")?;
         Delay::Late { minutes_late }
     } else if html.contains("Vlak ceka polazak") {
         Delay::WaitingToDepart
     } else if html.contains("Vlak je redovit") {
         Delay::OnTime
     } else if html.contains("Vlak nije u evidenciji") {
-        bail!("The train is not registered");
+        return Err(anyhow!("The train is not registered"))?;
     } else {
-        bail!("Unknown delay response");
+        return Err(anyhow!("Unknown delay response"))?;
     };
 
     Ok(TrainStatus {
@@ -265,20 +301,13 @@ fn parse_delay_html2(html: String) -> Result<TrainStatus, anyhow::Error> {
     })
 }
 
-#[tracing::instrument(ret)]
-fn parse_delay_html(html: &String) -> Result<i32, anyhow::Error> {
-    let x = html
-        .find("Kasni ")
-        .ok_or_else(|| anyhow!("couldn't find Kasni"))?
-        + "Kasni ".len();
+#[derive(thiserror::Error, Debug)]
+enum ParseHtmlError {
+    #[error("train isn't evidented")]
+    TrainNotEvidented,
 
-    let y = html
-        .find(" min.")
-        .ok_or_else(|| anyhow!("couldn't find min."))?;
-
-    let result: i32 = html[x..y].trim().parse()?;
-
-    Ok(result)
+    #[error("error parsing the delay html")]
+    Other(#[from] anyhow::Error),
 }
 
 #[derive(Clone, Debug)]
@@ -299,6 +328,7 @@ enum Delay {
 enum Status {
     DepartingFromStation(DateTime<Utc>),
     FinishedDriving(DateTime<Utc>),
+    Formed(DateTime<Utc>),
 }
 
 #[tracing::instrument(err)]
@@ -321,4 +351,212 @@ async fn update_route_real_times(
     .await?;
 
     Ok(())
+}
+
+mod tests {
+    #[test]
+    fn test_parse_html() -> Result<(), anyhow::Error> {
+        let html = r##"<HTML>
+<HEAD>
+<TITLE>Trenutna pozicija vlaka</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=windows-1250">
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align="CENTER"><TR>
+<TD><FONT COLOR="#333399"><FONT FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<H3 ALIGN=center>HŽ Infrastruktura<BR>                                  </H3></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD="GET" ACTION="http://10.215.0.117/hzinfo/Default.asp?">
+<P ALIGN=CENTER>
+<FONT SIZE=6 FACE=Arial,Helvetica COLOR="#333399">
+<TABLE ALIGN=CENETR WIDTH=110%>
+<TD BGCOLOR=#bbddff><I>Trenutna pozicija<br>vlak: </I>  8067 <br>
+Relacija:<br> SAVSKI-MAR>DUGO-SELO- </strong></TD><TR>
+<TD BGCOLOR=#bbddff><I>Kolodvor: </I><strong>DUGO+SELO<br> </TD><TR>
+<TD BGCOLOR=#bbddff><I>Završio vožnju      </I><cr>
+26.01.24. u 18:58 sati</TD><TR>
+<TD><FONT FACE=Arial,Helvetica COLOR=#ff00b0>
+Vlak je redovit                                   <BR>
+<FONT SIZE=4 FACE=Verdana,Arial,Helvetica COLOR="#333399">
+ <BR>
+</TD><TR><TD>
+</TD></TABLE><HR><FONT SIZE=1 FACE=Arial,Helvetica COLOR=009FFF>
+Stanje vlaka od 26/01/24   u 23:33   <HR>
+<INPUT TYPE="HIDDEN" NAME="Category" VALUE="hzinfo">
+<INPUT TYPE="HIDDEN" NAME="Service" VALUE="tpvl">
+<INPUT TYPE="HIDDEN" NAME="SCREEN" VALUE="1">
+<INPUT TYPE="SUBMIT" VALUE="Povrat">
+</FORM>
+</BODY>
+</HTML>"##;
+
+        super::parse_delay_html(html.to_string())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_html2() -> Result<(), anyhow::Error> {
+        let html2 = r##"<HTML>
+<HEAD>
+<TITLE>Trenutna pozicija vlaka</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=windows-1250">
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align="CENTER"><TR>
+<TD><FONT COLOR="#333399"><FONT FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<H3 ALIGN=center>HŽ Infrastruktura<BR>                                  </H3></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD="GET" ACTION="http://10.215.0.117/hzinfo/Default.asp?">
+<P ALIGN=CENTER>
+<FONT SIZE=6 FACE=Arial,Helvetica COLOR="#333399">
+<TABLE ALIGN=CENETR WIDTH=110%>
+<TD BGCOLOR=#bbddff><I>Trenutna pozicija<br>vlak: </I>  2303 <br>
+Relacija:<br>  >  </strong></TD><TR>
+<TD BGCOLOR=#bbddff><I>Kolodvor: </I><strong>SV.+IVAN+ŽABNO<br> </TD><TR>
+<TD BGCOLOR=#bbddff><I>Odlazak  </I><cr>
+27.01.24. u 00:03 sati</TD><TR>
+<TD><FONT FACE=Arial,Helvetica COLOR=#ff00b0>
+Vlak je redovit                                   <BR>
+<FONT SIZE=4 FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<predv><BR>
+</TD><TR><TD>
+</TD></TABLE><HR><FONT SIZE=1 FACE=Arial,Helvetica COLOR=009FFF>
+Stanje vlaka od 27/01/24   u 00:09   <HR>
+<INPUT TYPE="HIDDEN" NAME="Category" VALUE="hzinfo">
+<INPUT TYPE="HIDDEN" NAME="Service" VALUE="tpvl">
+<INPUT TYPE="HIDDEN" NAME="SCREEN" VALUE="1">
+<INPUT TYPE="SUBMIT" VALUE="Povrat">
+</FORM>
+</BODY>
+</HTML>
+"##;
+
+        super::parse_delay_html(html2.to_string())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_html3() -> Result<(), anyhow::Error> {
+        let html3 = r##"<HTML>
+<HEAD>
+<TITLE>Trenutna pozicija vlaka</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=windows-1250">
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align="CENTER"><TR>
+<TD><FONT COLOR="#333399"><FONT FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<H3 ALIGN=center>HŽ Infrastruktura<BR>                                  </H3></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD="GET" ACTION="http://10.215.0.117/hzinfo/Default.asp?">
+<P ALIGN=CENTER>
+<FONT SIZE=6 FACE=Arial,Helvetica COLOR="#333399">
+<TABLE ALIGN=CENETR WIDTH=110%>
+<TD BGCOLOR=#bbddff><I>Trenutna pozicija<br>vlak: </I>  2111 <br>
+Relacija:<br> ZAGREB-GLA>NOVSKA---- </strong></TD><TR>
+<TD BGCOLOR=#bbddff><I>Kolodvor: </I><strong>LIPOVLJANI<br> </TD><TR>
+<TD BGCOLOR=#bbddff><I>Odlazak  </I><cr>
+27.01.24. u 01:07 sati</TD><TR>
+<TD><FONT FACE=Arial,Helvetica COLOR=#FF000A>
+<BLINK>Kasni    6 min.                                   </BLINK><BR>
+<FONT SIZE=4 FACE=Verdana,Arial,Helvetica COLOR="#333399">
+ <BR>
+</TD><TR><TD>
+</TD></TABLE><HR><FONT SIZE=1 FACE=Arial,Helvetica COLOR=009FFF>
+Stanje vlaka od 27/01/24   u 01:55   <HR>
+<INPUT TYPE="HIDDEN" NAME="Category" VALUE="hzinfo">
+<INPUT TYPE="HIDDEN" NAME="Service" VALUE="tpvl">
+<INPUT TYPE="HIDDEN" NAME="SCREEN" VALUE="1">
+<INPUT TYPE="SUBMIT" VALUE="Povrat">
+</FORM>
+</BODY>
+</HTML>
+"##;
+
+        super::parse_delay_html(html3.to_string())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_html4() -> Result<(), anyhow::Error> {
+        let html4 = r##"<HTML>
+<HEAD>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=windows-1250">
+<TITLE>Trenutna pozicija putničkog vlaka</TITLE>
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align="CENTER"><TR>
+<TD><FONT COLOR="#333399"><FONT FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<H5 ALIGN=center>HŽ Infrastruktura<BR>Trenutna pozicija putničkog vlaka</H5></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD="GET" ACTION="http://10.215.0.117/hzinfo/Default.asp?"><P><FONT FACE=Arial,Helvetica COLOR="#333399" ALIGN=center  >
+<STRONG>Broj vlaka: </STRONG>
+<INPUT NAME="VL" TYPE="TEXT" SIZE="5" MAXLENGTH="5">
+<P>
+<P><STRONG>Vlak nije u evidenciji.                                     </STRONG></P>
+<INPUT TYPE="HIDDEN" NAME="Category" VALUE="hzinfo">
+<INPUT TYPE="HIDDEN" NAME="Service" VALUE="tpvl">
+<INPUT TYPE="HIDDEN" NAME="SCREEN" VALUE="2">
+<INPUT TYPE="SUBMIT" VALUE=" OK ">
+</FORM>
+<PRE><P>
+<STRONG><P>
+<STRONG><P>
+<STRONG><P></PRE>
+</BODY>
+</HTML>
+"##;
+
+        match super::parse_delay_html(html4.to_string()) {
+            Ok(_) => Ok(()),
+            Err(err) => match err {
+                super::ParseHtmlError::TrainNotEvidented => Ok(()), // expected error
+                super::ParseHtmlError::Other(err) => Err(err),      // unexpected error
+            },
+        }
+    }
+
+    #[test]
+    fn test_parse_html5() -> Result<(), anyhow::Error> {
+        let html5 = r##"<HTML>
+<HEAD>
+<TITLE>Trenutna pozicija vlaka</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=windows-1250">
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align="CENTER"><TR>
+<TD><FONT COLOR="#333399"><FONT FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<H3 ALIGN=center>HŽ Infrastruktura<BR>                                  </H3></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD="GET" ACTION="http://10.215.0.117/hzinfo/Default.asp?">
+<P ALIGN=CENTER>
+<FONT SIZE=6 FACE=Arial,Helvetica COLOR="#333399">
+<TABLE ALIGN=CENETR WIDTH=110%>
+<TD BGCOLOR=#bbddff><I>Trenutna pozicija<br>vlak: </I>  2023 <br>
+Relacija:<br> ZAGREB-GLA>VINKOVCI-- </strong></TD><TR>
+<TD BGCOLOR=#bbddff><I>Kolodvor: </I><strong>ZAGREB+GL.+KOL.<br> </TD><TR>
+<TD BGCOLOR=#bbddff><I>Formiran </I><cr>
+27.01.24. u 17:34 sati</TD><TR>
+<TD><FONT FACE=Arial,Helvetica COLOR=#FF000A>
+<BLINK>                                                  </BLINK><BR>
+<FONT SIZE=4 FACE=Verdana,Arial,Helvetica COLOR="#333399">
+Vlak ceka polazak                                 <BR>
+</TD><TR><TD>
+</TD></TABLE><HR><FONT SIZE=1 FACE=Arial,Helvetica COLOR=009FFF>
+Stanje vlaka od 27/01/24   u 18:54   <HR>
+<INPUT TYPE="HIDDEN" NAME="Category" VALUE="hzinfo">
+<INPUT TYPE="HIDDEN" NAME="Service" VALUE="tpvl">
+<INPUT TYPE="HIDDEN" NAME="SCREEN" VALUE="1">
+<INPUT TYPE="SUBMIT" VALUE="Povrat">
+</FORM>
+</BODY>
+</HTML>
+"##;
+
+        super::parse_delay_html(html5.to_string())?;
+
+        Ok(())
+    }
 }
