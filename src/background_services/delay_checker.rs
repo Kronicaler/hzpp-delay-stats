@@ -130,6 +130,7 @@ async fn check_delay_until_route_completion(
             Err(err) => match err {
                 GetRouteError::TrainNotEvidented => {
                     info!("train isn't evidented"); // sometimes the API is just shit
+                    info!(train_not_evidented = true);
                     break Ok(());
                 }
                 GetRouteError::Other(err) => {
@@ -141,10 +142,10 @@ async fn check_delay_until_route_completion(
                 }
             },
         };
-        
+
         match (delay.delay, delay.status) {
             (Delay::WaitingToDepart, Status::DepartingFromStation(_)) => {} // wait for train to start
-            (Delay::WaitingToDepart, Status::Formed(_)) => {}, // wait for train to start
+            (Delay::WaitingToDepart, Status::Formed(_)) => {} // wait for train to start
             (Delay::OnTime, Status::DepartingFromStation(_)) => {
                 if route.real_start_time.is_none() {
                     route.real_start_time = Some(route.expected_start_time);
