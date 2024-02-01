@@ -67,7 +67,7 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
         expected_end_time,
         real_start_time,
         real_end_time
-        from routes where real_end_time IS NULL",
+        from routes where real_end_time IS NULL or real_start_time IS NULL",
     )
     .map(|row: PgRow| RouteDb {
         id: row.try_get(0).unwrap(),
