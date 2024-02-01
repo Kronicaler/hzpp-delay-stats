@@ -9,7 +9,7 @@ use itertools::Itertools;
 use reqwest::{header::HeaderValue, Client, Method, Url};
 use sqlx::{postgres::PgRow, query, Pool, Postgres, Row};
 use tokio::{spawn, sync::mpsc::Receiver, time::sleep};
-use tracing::{error, info, info_span, Instrument};
+use tracing::{error, info, info_span, warn, Instrument};
 
 use crate::{model::db_model::RouteDb, utils::str_between_str};
 
@@ -124,7 +124,23 @@ async fn check_delay_until_route_completion(
     mut route: RouteDb,
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
+    let mut has_started = false;
+
     loop {
+        if Utc::now() > route.expected_end_time + chrono::Duration::hours(1) {
+            info!(train_timeout = true);
+
+            if route.real_start_time.is_none() {
+                info!(train_never_started = true);
+            }
+
+            if route.real_end_time.is_none() {
+                info!(train_never_finished = true);
+            }
+
+            return Ok(());
+        }
+
         let delay: TrainStatus = match get_route_delay(&route).await {
             Ok(it) => it,
             Err(err) => match err {
@@ -148,6 +164,7 @@ async fn check_delay_until_route_completion(
             (Delay::WaitingToDepart, Status::Formed(_)) => {} // wait for train to start
             (Delay::OnTime, Status::DepartingFromStation(_) | Status::Arriving(_)) => {
                 if route.real_start_time.is_none() {
+                    has_started = true;
                     route.real_start_time = Some(route.expected_start_time);
                     update_route_real_times(&route, &pool).await?;
                 }
@@ -157,6 +174,7 @@ async fn check_delay_until_route_completion(
                 Status::DepartingFromStation(_) | Status::Arriving(_),
             ) => {
                 if route.real_start_time.is_none() {
+                    has_started = true;
                     route.real_start_time = Some(
                         route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
                     );
@@ -164,17 +182,25 @@ async fn check_delay_until_route_completion(
                 }
             }
             (Delay::OnTime, Status::FinishedDriving(_)) => {
-                route.real_end_time = Some(route.expected_end_time);
-                update_route_real_times(&route, &pool).await?;
-                return Ok(());
+                if has_started {
+                    route.real_end_time = Some(route.expected_end_time);
+                    update_route_real_times(&route, &pool).await?;
+                    return Ok(());
+                }
             }
             (Delay::Late { minutes_late }, Status::FinishedDriving(_)) => {
-                route.real_end_time =
-                    Some(route.expected_end_time + chrono::Duration::minutes(minutes_late.into()));
-                update_route_real_times(&route, &pool).await?;
-                return Ok(());
+                if has_started {
+                    route.real_end_time = Some(
+                        route.expected_end_time + chrono::Duration::minutes(minutes_late.into()),
+                    );
+                    update_route_real_times(&route, &pool).await?;
+                    return Ok(());
+                }
             }
-            _ => bail!("invalid variant"),
+            _ => {
+                error!(invalid_variant = true);
+                bail!("invalid variant");
+            }
         }
 
         sleep(Duration::from_secs(60))
