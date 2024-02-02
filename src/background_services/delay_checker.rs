@@ -34,16 +34,10 @@ pub async fn check_delays(
 }
 
 async fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
-    for mut route in routes {
+    for route in routes {
         let secs_until_end = route.expected_end_time.timestamp() - Utc::now().timestamp();
         if secs_until_end < 0 {
             info!("Got route in the past, discarding it");
-
-            route.real_start_time = route.real_start_time.or(Some(route.expected_start_time));
-            route.real_end_time = route.real_end_time.or(Some(route.expected_end_time));
-            if let Err(e) = update_route_real_times(&route, pool).await {
-                error!("error when saving old route {}", e);
-            }
 
             continue;
         }
