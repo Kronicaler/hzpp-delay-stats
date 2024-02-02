@@ -118,7 +118,7 @@ async fn check_delay_until_route_completion(
     mut route: RouteDb,
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
-    let mut train_has_started = false;
+    let mut train_has_started = route.real_start_time.is_some();
 
     loop {
         if Utc::now() > route.expected_end_time + chrono::Duration::hours(12) {
