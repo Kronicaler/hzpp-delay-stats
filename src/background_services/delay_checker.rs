@@ -160,6 +160,7 @@ async fn check_delay_until_route_completion(
         };
 
         match (delay.delay, delay.status) {
+            (Delay::NoData, _) => {} // wait for data
             (Delay::WaitingToDepart, Status::DepartingFromStation(_) | Status::Arriving(_)) => {} // wait for train to start
             (Delay::WaitingToDepart, Status::Formed(_)) => {} // wait for train to start
             (Delay::OnTime, Status::DepartingFromStation(_) | Status::Arriving(_)) => {
@@ -309,6 +310,12 @@ fn parse_delay_html(html: String) -> Result<DelayResponse, anyhow::Error> {
         Delay::WaitingToDepart
     } else if html.contains("Vlak je redovit") {
         Delay::OnTime
+    } else if lines
+        .get(20)
+        .ok_or_else(|| anyhow!("couldn't find delay line"))?
+        .contains("<BLINK>                                                  </BLINK>")
+    {
+        Delay::NoData
     } else {
         bail!("Unknown delay response");
     };
@@ -336,6 +343,7 @@ struct TrainStatus {
 
 #[derive(Copy, Clone, Debug)]
 enum Delay {
+    NoData,
     WaitingToDepart,
     OnTime,
     Late { minutes_late: i32 },
@@ -603,6 +611,90 @@ Please report this error to the Webmaster, or System Administrator
 </body></html>"##;
 
         super::parse_delay_html(html6.to_string())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_html7() -> Result<(), anyhow::Error> {
+        let html7 = r##"<HTML>
+<HEAD>
+<TITLE>Trenutna pozicija vlaka</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=windows-1250">
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align="CENTER"><TR>
+<TD><FONT COLOR="#333399"><FONT FACE=Verdana,Arial,Helvetica COLOR="#333399">
+<H3 ALIGN=center>HŽ Infrastruktura<BR>                                  </H3></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD="GET" ACTION="http://10.215.0.117/hzinfo/Default.asp?">
+<P ALIGN=CENTER>
+<FONT SIZE=6 FACE=Arial,Helvetica COLOR="#333399">
+<TABLE ALIGN=CENETR WIDTH=110%>
+<TD BGCOLOR=#bbddff><I>Trenutna pozicija<br>vlak: </I>  5121 <br>
+Relacija:<br> ZAGREB-GLA>SISAK-CAPR </strong></TD><TR>
+<TD BGCOLOR=#bbddff><I>Kolodvor: </I><strong>ZAGREB+GL.+KOL.<br> </TD><TR>
+<TD BGCOLOR=#bbddff><I>Formiran </I><cr>
+31.01.24. u 20:11 sati</TD><TR>
+<TD><FONT FACE=Arial,Helvetica COLOR=#FF000A>
+<BLINK>                                                  </BLINK><BR>
+<FONT SIZE=4 FACE=Verdana,Arial,Helvetica COLOR="#333399">
+ <BR>
+</TD><TR><TD>
+</TD></TABLE><HR><FONT SIZE=1 FACE=Arial,Helvetica COLOR=009FFF>
+Stanje vlaka od 31/01/24   u 20:19   <HR>
+<INPUT TYPE="HIDDEN" NAME="Category" VALUE="hzinfo">
+<INPUT TYPE="HIDDEN" NAME="Service" VALUE="tpvl">
+<INPUT TYPE="HIDDEN" NAME="SCREEN" VALUE="1">
+<INPUT TYPE="SUBMIT" VALUE="Povrat">
+</FORM>
+</BODY>
+</HTML>
+"##;
+
+        super::parse_delay_html(html7.to_string())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_html8() -> Result<(), anyhow::Error> {
+        let html8 = r##"<HTML>
+<HEAD>
+<TITLE>Trenutna pozicija vlaka</TITLE>
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" charset=windows-1250\">
+</HEAD>
+<BODY BACKGROUND=Images/slika.jpg><TABLE align=\"CENTER\"><TR>
+<TD><FONT COLOR=\"#333399\"><FONT FACE=Verdana,Arial,Helvetica COLOR=\"#333399\">
+<H3 ALIGN=center>HŽ Infrastruktura<BR>                                  </H3></FONT>
+</TR></TABLE>
+<HR>
+<FORM METHOD=\"GET\" ACTION=\"http://10.215.0.117/hzinfo/Default.asp?\">
+<P ALIGN=CENTER>
+<FONT SIZE=6 FACE=Arial,Helvetica COLOR=\"#333399\">
+<TABLE ALIGN=CENETR WIDTH=110%>
+<TD BGCOLOR=#bbddff><I>Trenutna pozicija<br>vlak: </I>  3136 <br>
+Relacija:<br> ZABOK----->DJURMANEC- </strong></TD><TR>
+<TD BGCOLOR=#bbddff><I>Kolodvor: </I><strong>KRAPINA<br> </TD><TR>
+<TD BGCOLOR=#bbddff><I>Formiran </I><cr>
+02.02.24. u 18:09 sati</TD><TR>
+<TD><FONT FACE=Arial,Helvetica COLOR=#FF000A>
+<BLINK>                                                  </BLINK><BR>
+<FONT SIZE=4 FACE=Verdana,Arial,Helvetica COLOR=\"#333399\">
+ <BR>
+</TD><TR><TD>
+</TD></TABLE><HR><FONT SIZE=1 FACE=Arial,Helvetica COLOR=009FFF>
+Stanje vlaka od 02/02/24   u 18:29   <HR>
+<INPUT TYPE=\"HIDDEN\" NAME=\"Category\" VALUE=\"hzinfo\">
+<INPUT TYPE=\"HIDDEN\" NAME=\"Service\" VALUE=\"tpvl\">
+<INPUT TYPE=\"HIDDEN\" NAME=\"SCREEN\" VALUE=\"1\">
+<INPUT TYPE=\"SUBMIT\" VALUE=\"Povrat\">
+</FORM>
+</BODY>
+</HTML>
+"##;
+
+        super::parse_delay_html(html8.to_string())?;
 
         Ok(())
     }
