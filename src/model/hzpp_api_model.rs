@@ -62,5 +62,5 @@ where
         (hour, minute)
     };
 
-    return res.map_err(de::Error::custom);
+    res.map_err(de::Error::custom)
 }

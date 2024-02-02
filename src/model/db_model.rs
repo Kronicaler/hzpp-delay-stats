@@ -81,8 +81,8 @@ impl RouteDb {
 
 #[derive(Copy, Clone, Debug)]
 pub enum BikesAllowed {
-    NotAllowed = 0 | 2, // API shenanigans
     Allowed = 1,
+    NotAllowed = 2, // API shenanigans
 }
 
 impl TryFrom<i32> for BikesAllowed {
@@ -111,8 +111,8 @@ impl TryFrom<i16> for BikesAllowed {
 
 #[derive(Copy, Clone, Debug)]
 pub enum WheelchairAccessible {
-    NotAccessible = 0 | 2,
     Accessible = 1,
+    NotAccessible = 2,
 }
 
 #[derive(Copy, Clone, Debug)]

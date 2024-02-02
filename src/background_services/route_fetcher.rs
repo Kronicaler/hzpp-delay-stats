@@ -86,7 +86,7 @@ async fn save_routes(
     let saved_routes = routes
         .iter()
         .filter(|r| saved_route_nums.contains(&r.route_number))
-        .map(|r| r.clone())
+        .cloned()
         .collect_vec();
 
     Ok(saved_routes)

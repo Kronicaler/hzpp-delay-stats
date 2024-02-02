@@ -9,7 +9,7 @@ use itertools::Itertools;
 use reqwest::{header::HeaderValue, Client, Method, Url};
 use sqlx::{postgres::PgRow, query, Pool, Postgres, Row};
 use tokio::{spawn, sync::mpsc::Receiver, time::sleep};
-use tracing::{error, info, info_span, warn, Instrument};
+use tracing::{error, info, info_span, Instrument};
 
 use crate::{model::db_model::RouteDb, utils::str_between_str};
 
@@ -91,7 +91,7 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
     .fetch_all(pool)
     .await?;
 
-    return Ok(x);
+    Ok(x)
 }
 
 async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
@@ -124,10 +124,10 @@ async fn check_delay_until_route_completion(
     mut route: RouteDb,
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
-    let mut has_started = false;
+    let mut train_has_started = false;
 
     loop {
-        if Utc::now() > route.expected_end_time + chrono::Duration::hours(1) {
+        if Utc::now() > route.expected_end_time + chrono::Duration::hours(12) {
             info!(train_timeout = true);
 
             if route.real_start_time.is_none() {
@@ -142,21 +142,27 @@ async fn check_delay_until_route_completion(
         }
 
         let delay: TrainStatus = match get_route_delay(&route).await {
-            Ok(it) => it,
-            Err(err) => match err {
-                GetRouteError::TrainNotEvidented => {
-                    info!("train isn't evidented"); // sometimes the API is just shit
+            Ok(dr) => match dr {
+                DelayResponse::TrainStatus(ts) => ts,
+                DelayResponse::TrainNotEvidented => {
                     info!(train_not_evidented = true);
-                    break Ok(());
+                    return Ok(());
                 }
-                GetRouteError::Other(err) => {
-                    error!("{:?}", err.context("error fetching delay"));
+                DelayResponse::UnisysError => {
+                    info!(unisys_error = true);
                     sleep(Duration::from_secs(60))
                         .instrument(info_span!("Waiting 60 seconds"))
                         .await;
                     continue;
                 }
             },
+            Err(err) => {
+                error!("{:?}", err.context("error fetching delay"));
+                sleep(Duration::from_secs(60))
+                    .instrument(info_span!("Waiting 60 seconds"))
+                    .await;
+                continue;
+            }
         };
 
         match (delay.delay, delay.status) {
@@ -164,7 +170,7 @@ async fn check_delay_until_route_completion(
             (Delay::WaitingToDepart, Status::Formed(_)) => {} // wait for train to start
             (Delay::OnTime, Status::DepartingFromStation(_) | Status::Arriving(_)) => {
                 if route.real_start_time.is_none() {
-                    has_started = true;
+                    train_has_started = true;
                     route.real_start_time = Some(route.expected_start_time);
                     update_route_real_times(&route, &pool).await?;
                 }
@@ -174,7 +180,7 @@ async fn check_delay_until_route_completion(
                 Status::DepartingFromStation(_) | Status::Arriving(_),
             ) => {
                 if route.real_start_time.is_none() {
-                    has_started = true;
+                    train_has_started = true;
                     route.real_start_time = Some(
                         route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
                     );
@@ -182,14 +188,14 @@ async fn check_delay_until_route_completion(
                 }
             }
             (Delay::OnTime, Status::FinishedDriving(_)) => {
-                if has_started {
+                if train_has_started {
                     route.real_end_time = Some(route.expected_end_time);
                     update_route_real_times(&route, &pool).await?;
                     return Ok(());
                 }
             }
             (Delay::Late { minutes_late }, Status::FinishedDriving(_)) => {
-                if has_started {
+                if train_has_started {
                     route.real_end_time = Some(
                         route.expected_end_time + chrono::Duration::minutes(minutes_late.into()),
                     );
@@ -210,7 +216,7 @@ async fn check_delay_until_route_completion(
 }
 
 #[tracing::instrument(ret, err)]
-async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, GetRouteError> {
+async fn get_route_delay(route: &RouteDb) -> Result<DelayResponse, anyhow::Error> {
     let url = format!(
         "https://traindelay.hzpp.hr/train/delay?trainId={}",
         route.route_number
@@ -235,37 +241,22 @@ async fn get_route_delay(route: &RouteDb) -> Result<TrainStatus, GetRouteError> 
         .await
         .context("Error getting response text")?;
 
-    let status = match parse_delay_html(content) {
-        Ok(status) => status,
-        Err(err) => match err {
-            ParseHtmlError::TrainNotEvidented => return Err(GetRouteError::TrainNotEvidented),
-            ParseHtmlError::Other(e) => return Err(e)?,
-        },
-    };
+    let delay_response = parse_delay_html(content)?;
 
-    Ok(status)
-}
-
-#[derive(thiserror::Error, Debug)]
-enum GetRouteError {
-    #[error("train isn't evidented")]
-    TrainNotEvidented,
-
-    #[error("error getting route delay")]
-    Other(#[from] anyhow::Error),
+    Ok(delay_response)
 }
 
 #[tracing::instrument(ret, err)]
-fn parse_delay_html(html: String) -> Result<TrainStatus, ParseHtmlError> {
-    let lines = html.lines().collect_vec();
-
-    if lines
-        .get(14)
-        .ok_or_else(|| anyhow!("couldn't get line 14"))?
-        .contains("Vlak nije u evidenciji")
-    {
-        return Err(ParseHtmlError::TrainNotEvidented)?;
+fn parse_delay_html(html: String) -> Result<DelayResponse, anyhow::Error> {
+    if html.contains("Unisys") {
+        return Ok(DelayResponse::UnisysError);
     }
+
+    if html.contains("Vlak nije u evidenciji") {
+        return Ok(DelayResponse::TrainNotEvidented);
+    }
+
+    let lines = html.lines().collect_vec();
 
     let station_line = *lines
         .iter()
@@ -324,26 +315,22 @@ fn parse_delay_html(html: String) -> Result<TrainStatus, ParseHtmlError> {
         Delay::WaitingToDepart
     } else if html.contains("Vlak je redovit") {
         Delay::OnTime
-    } else if html.contains("Vlak nije u evidenciji") {
-        return Err(anyhow!("The train is not registered"))?;
     } else {
-        return Err(anyhow!("Unknown delay response"))?;
+        bail!("Unknown delay response");
     };
 
-    Ok(TrainStatus {
+    Ok(DelayResponse::TrainStatus(TrainStatus {
         delay,
         station,
         status,
-    })
+    }))
 }
 
-#[derive(thiserror::Error, Debug)]
-enum ParseHtmlError {
-    #[error("train isn't evidented")]
+#[derive(Clone, Debug)]
+enum DelayResponse {
+    TrainStatus(TrainStatus),
     TrainNotEvidented,
-
-    #[error("error parsing the delay html")]
-    Other(#[from] anyhow::Error),
+    UnisysError,
 }
 
 #[derive(Clone, Debug)]
@@ -546,13 +533,9 @@ Stanje vlaka od 27/01/24   u 01:55   <HR>
 </HTML>
 "##;
 
-        match super::parse_delay_html(html4.to_string()) {
-            Ok(_) => Ok(()),
-            Err(err) => match err {
-                super::ParseHtmlError::TrainNotEvidented => Ok(()), // expected error
-                super::ParseHtmlError::Other(err) => Err(err),      // unexpected error
-            },
-        }
+        super::parse_delay_html(html4.to_string())?;
+
+        Ok(())
     }
 
     #[test]
@@ -593,6 +576,39 @@ Stanje vlaka od 27/01/24   u 18:54   <HR>
 "##;
 
         super::parse_delay_html(html5.to_string())?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_html6() -> Result<(), anyhow::Error> {
+        let html6 = r##"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\"
+\"http://www.w3.org/TR/html4/loose.dtd\">
+<html><head><title>Unisys Internet Commerce Enabler Error Message</title></head>
+<body>
+<table width=\"100%\" border=0><tr><td rowspan=2>
+<img src=\"/CISystem/Images/Globe.gif\" width=147 height=55 alt=\"\"/>
+</td><td colspan=2 width=\"85%\">
+<font face=\"georgia, times-new-roman\" size=4 color=\"#0033FF\">
+<a href=\"http://www.unisys.com/sw/web/ice\">
+<img src=\"/CISystem/Images/ICEPower-Img.gif\" width=160 height=43 align=\"right\" border=0
+ alt=\"Click here for information about Unisys Internet Commerce Enabler\"/></a>
+<b><i>Unisys Internet Commerce Enabler</i></b></font></td>
+</tr><tr><td colspan=2 bgcolor=\"#0033FF\" height=16 width=\"85%\">
+</td></tr></table>
+<br><br><font size=5><b>Error Description:</b></font>
+<hr>
+<font size=4 color=\"#FF0000\"><b>The maximum number of available Cool ICE sessions has been exceeded.  Please try again later.</b></font>
+<hr>
+<br><font size=5><b>Error Code:</b></font>
+<hr>
+<font size=4 color=\"#FF0000\"><b>800417D9</b></font>
+<hr><br><br><br>
+Please report this error to the Webmaster, or System Administrator
+<hr>
+</body></html>"##;
+
+        super::parse_delay_html(html6.to_string())?;
 
         Ok(())
     }
