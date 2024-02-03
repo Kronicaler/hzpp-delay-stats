@@ -37,7 +37,8 @@ pub async fn get_todays_routes(
     Ok(())
 }
 
-/// Returns the saved routes. If a route is already present in the DB it isn't saved
+/// Returns the saved routes. If a route is already present in the DB it isn't saved.
+/// Does not save real times.
 #[tracing::instrument(err, skip(routes))]
 async fn save_routes(
     routes: &Vec<RouteDb>,
