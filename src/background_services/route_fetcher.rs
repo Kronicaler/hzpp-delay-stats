@@ -4,7 +4,7 @@ use chrono::DateTime;
 use chrono_tz::{Europe::Zagreb, Tz};
 use itertools::Itertools;
 use sqlx::{postgres::PgRow, Postgres, QueryBuilder, Row};
-use std::{backtrace::Backtrace, collections::HashSet, hash::RandomState};
+use std::{backtrace::Backtrace, collections::HashSet};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, info_span, Instrument};
 
@@ -81,7 +81,7 @@ async fn save_routes(
         .fetch_all(&pool)
         .await?;
 
-    let saved_route_nums: HashSet<i32, RandomState> = HashSet::from_iter(saved_route_nums);
+    let saved_route_nums: HashSet<i32> = HashSet::from_iter(saved_route_nums);
 
     let saved_routes = routes
         .iter()
