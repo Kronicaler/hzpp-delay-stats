@@ -26,12 +26,11 @@ CREATE TABLE stops(
     route_id varchar(255) NOT NULL,
     route_expected_start_time timestamp NOT NULL,
     sequence smallint NOT NULL,
-    code int NOT NULL,
     real_arrival timestamp NULL,
     expected_arrival timestamp NOT NULL,
     real_departure timestamp NULL,
     expected_departure timestamp NOT NULL,
-    PRIMARY KEY(route_id, route_expected_start_time),
+    PRIMARY KEY(route_id, route_expected_start_time, sequence),
     FOREIGN KEY (station_id) REFERENCES stations(id),
     FOREIGN KEY (route_id, route_expected_start_time) REFERENCES routes(id, expected_start_time)
 );

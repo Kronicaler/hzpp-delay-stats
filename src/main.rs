@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use background_services::delay_checker::check_delays;
-use background_services::route_fetcher::get_todays_routes;
+use background_services::data_fetcher::get_todays_data;
 use dotenvy::dotenv;
 use model::db_model::RouteDb;
 use opentelemetry::trace::TracerProvider as _;
@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
     let route_fetcher = spawn(async move {
         loop {
             if let Err(e) =
-                get_todays_routes(&route_fetcher_pool, delay_checker_sender.clone()).await
+                get_todays_data(&route_fetcher_pool, delay_checker_sender.clone()).await
             {
                 error!("{e}");
                 sleep(Duration::from_secs(60)).await;

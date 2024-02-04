@@ -1,11 +1,16 @@
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail, Context, Error};
 use chrono::{DateTime, Days, Timelike, Utc};
 use chrono_tz::Tz;
+use derivative::Derivative;
+use itertools::Itertools;
 use sqlx::prelude::FromRow;
+use tracing::error;
 
-use super::hzpp_api_model::HzppRoute;
+use super::hzpp_api_model::{HzppRoute, HzppStop};
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Derivative)]
+#[derivative(Debug)]
+#[derive(Clone, FromRow)]
 pub struct RouteDb {
     pub id: String,
     pub route_number: i32,
@@ -20,6 +25,8 @@ pub struct RouteDb {
     pub real_end_time: Option<DateTime<Utc>>,
     /// The arrival time of the last stop
     pub expected_end_time: DateTime<Utc>,
+    #[derivative(Debug = "ignore")]
+    pub stops: Vec<StopDb>,
 }
 
 impl RouteDb {
@@ -36,32 +43,23 @@ impl RouteDb {
 
         // These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
         let expected_start_time = first_stop.departure_time;
-
-        let expected_start_time = date
-            .checked_add_days(Days::new(expected_start_time.0 as u64 / 24))
-            .ok_or_else(|| anyhow!("invalid start time day"))?
-            .with_hour(expected_start_time.0 as u32 % 24)
-            .ok_or_else(|| anyhow!("invalid start time hour"))?
-            .with_minute(expected_start_time.1.into())
-            .ok_or_else(|| anyhow!("invalid start time minute"))?
-            .with_second(0)
-            .ok_or_else(|| anyhow!("invalid start time second"))?
-            .with_nanosecond(0)
-            .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
-
         let expected_end_time = last_stop.arrival_time;
 
-        let expected_end_time = date
-            .checked_add_days(Days::new(expected_end_time.0 as u64 / 24))
-            .ok_or_else(|| anyhow!("invalid end time day"))?
-            .with_hour(expected_end_time.0 as u32 % 24)
-            .ok_or_else(|| anyhow!("invalid end time hour"))?
-            .with_minute(expected_end_time.1.into())
-            .ok_or_else(|| anyhow!("invalid end time minute"))?
-            .with_second(0)
-            .ok_or_else(|| anyhow!("invalid end time second"))?
-            .with_nanosecond(0)
-            .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
+        let (expected_start_time, expected_end_time) =
+            convert_hzpp_time_to_utc(&date, expected_start_time, expected_end_time)?;
+
+        let (stops, errors): (Vec<_>, Vec<_>) = hzpp_route
+            .stops
+            .iter()
+            .map(|s| StopDb::try_from_hzpp_stop(s.clone(), &hzpp_route, &date, "".to_string()))
+            .partition_result();
+
+        if errors.len() != 0 {
+            errors
+                .iter()
+                .for_each(|e| error!("Error turning HzppStop to StopDb: {}", e));
+            bail!("Error turning HzppStop to StopDb");
+        }
 
         Ok(RouteDb {
             id: hzpp_route.route_id,
@@ -75,8 +73,39 @@ impl RouteDb {
             expected_start_time: expected_start_time.with_timezone(&Utc),
             real_end_time: None,
             expected_end_time: expected_end_time.with_timezone(&Utc),
+            stops,
         })
     }
+}
+
+fn convert_hzpp_time_to_utc(
+    date: &DateTime<Tz>,
+    expected_start_time: (u8, u8),
+    expected_end_time: (u8, u8),
+) -> Result<(DateTime<Tz>, DateTime<Tz>), Error> {
+    let expected_start_time = date
+        .checked_add_days(Days::new(expected_start_time.0 as u64 / 24))
+        .ok_or_else(|| anyhow!("invalid start time day"))?
+        .with_hour(expected_start_time.0 as u32 % 24)
+        .ok_or_else(|| anyhow!("invalid start time hour"))?
+        .with_minute(expected_start_time.1.into())
+        .ok_or_else(|| anyhow!("invalid start time minute"))?
+        .with_second(0)
+        .ok_or_else(|| anyhow!("invalid start time second"))?
+        .with_nanosecond(0)
+        .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
+    let expected_end_time = date
+        .checked_add_days(Days::new(expected_end_time.0 as u64 / 24))
+        .ok_or_else(|| anyhow!("invalid end time day"))?
+        .with_hour(expected_end_time.0 as u32 % 24)
+        .ok_or_else(|| anyhow!("invalid end time hour"))?
+        .with_minute(expected_end_time.1.into())
+        .ok_or_else(|| anyhow!("invalid end time minute"))?
+        .with_second(0)
+        .ok_or_else(|| anyhow!("invalid end time second"))?
+        .with_nanosecond(0)
+        .ok_or_else(|| anyhow!("invalid end time nanosecond"))?;
+    Ok((expected_start_time, expected_end_time))
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -174,11 +203,49 @@ pub struct StopDb {
     pub id: String,
     pub station_id: String,
     pub route_id: String,
-    pub sequence: i8,
+    pub route_expected_start_time: DateTime<Utc>,
+    pub sequence: i16,
     pub real_arrival: Option<DateTime<Utc>>,
     pub expected_arrival: DateTime<Utc>,
     pub real_departure: Option<DateTime<Utc>>,
     pub expected_departure: DateTime<Utc>,
+}
+
+impl StopDb {
+    fn try_from_hzpp_stop(
+        hzpp_stop: HzppStop,
+        hzpp_route: &HzppRoute,
+        date: &DateTime<Tz>,
+        station_id: String,
+    ) -> Result<Self, anyhow::Error> {
+        let (expected_arrival, expected_departure) =
+            convert_hzpp_time_to_utc(&date, hzpp_stop.arrival_time, hzpp_stop.departure_time)?;
+        let (route_expected_start_time, _) = convert_hzpp_time_to_utc(
+            &date,
+            hzpp_route
+                .stops
+                .first()
+                .context("route doesn't contain any stops")?
+                .departure_time,
+            hzpp_route
+                .stops
+                .last()
+                .context("route doesn't contain any stops")?
+                .arrival_time,
+        )?;
+
+        Ok(StopDb {
+            id: hzpp_stop.stop_id,
+            station_id,
+            route_id: hzpp_route.route_id.clone(),
+            route_expected_start_time: route_expected_start_time.to_utc(),
+            sequence: hzpp_stop.sequence.try_into()?,
+            real_arrival: None,
+            expected_arrival: expected_arrival.to_utc(),
+            real_departure: None,
+            expected_departure: expected_departure.to_utc(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, FromRow)]

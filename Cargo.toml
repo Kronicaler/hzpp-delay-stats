@@ -40,3 +40,4 @@ sqlx = { version = "0.7.3", features = [
 postgres = "0.19.7"
 rustls = "0.22.1"
 chrono-tz = "0.8.4"
+derivative = "2.2.0"

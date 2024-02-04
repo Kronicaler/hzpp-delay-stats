@@ -20,7 +20,7 @@ pub struct HzppRoute {
     pub wheelchair_accessible: i32,
     /// 2 is train. 3 is bus.
     pub route_type: i32,
-    pub stops: Vec<HzzpStop>,
+    pub stops: Vec<HzppStop>,
     pub calendar: Vec<Calendar>,
 }
 
@@ -35,8 +35,8 @@ pub struct Calendar {
     pub sunday: i32,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct HzzpStop {
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct HzppStop {
     pub stop_id: String,
     pub stop_name: String,
     #[serde(deserialize_with = "timestamp_from_hzpp_time")]

@@ -1,6 +1,6 @@
 //! Responsible for checking the delays of routes gotten from the route_fetcher
 
-use std::time::Duration;
+use std::{time::Duration, vec};
 
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -64,23 +64,42 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
         from routes where real_end_time IS NULL or real_start_time IS NULL",
     )
     .map(|row: PgRow| RouteDb {
-        id: row.try_get(0).unwrap(),
-        route_number: row.try_get(1).unwrap(),
-        source: row.try_get(2).unwrap(),
-        destination: row.try_get(3).unwrap(),
-        bikes_allowed: row.try_get::<i16, usize>(4).unwrap().try_into().unwrap(),
-        wheelchair_accessible: row.try_get::<i16, usize>(5).unwrap().try_into().unwrap(),
-        route_type: row.try_get::<i16, usize>(6).unwrap().try_into().unwrap(),
-        expected_start_time: row.try_get::<NaiveDateTime, usize>(7).unwrap().and_utc(),
-        expected_end_time: row.try_get::<NaiveDateTime, usize>(8).unwrap().and_utc(),
+        id: row.try_get("id").unwrap(),
+        route_number: row.try_get("route_number").unwrap(),
+        source: row.try_get("source").unwrap(),
+        destination: row.try_get("destination").unwrap(),
+        bikes_allowed: row
+            .try_get::<i16, &str>("bikes_allowed")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        wheelchair_accessible: row
+            .try_get::<i16, &str>("wheelchair_accessible")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        route_type: row
+            .try_get::<i16, &str>("route_type")
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        expected_start_time: row
+            .try_get::<NaiveDateTime, &str>("expected_start_time")
+            .unwrap()
+            .and_utc(),
+        expected_end_time: row
+            .try_get::<NaiveDateTime, &str>("expected_end_time")
+            .unwrap()
+            .and_utc(),
         real_start_time: row
-            .try_get::<Option<NaiveDateTime>, usize>(9)
+            .try_get::<Option<NaiveDateTime>, &str>("real_start_time")
             .unwrap()
             .map(|dt| dt.and_utc()),
         real_end_time: row
-            .try_get::<Option<NaiveDateTime>, usize>(10)
+            .try_get::<Option<NaiveDateTime>, &str>("real_end_time")
             .unwrap()
             .map(|dt| dt.and_utc()),
+        stops: vec![],
     })
     .fetch_all(pool)
     .await?;
