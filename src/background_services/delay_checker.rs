@@ -1,6 +1,6 @@
 //! Responsible for checking the delays of routes gotten from the route_fetcher
 
-use std::{time::Duration, vec};
+use std::{collections::HashMap, hash::RandomState, time::Duration, vec};
 
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -11,7 +11,10 @@ use sqlx::{postgres::PgRow, query, Pool, Postgres, Row};
 use tokio::{spawn, sync::mpsc::Receiver, time::sleep};
 use tracing::{error, info, info_span, Instrument};
 
-use crate::{model::db_model::RouteDb, utils::str_between_str};
+use crate::{
+    model::db_model::{RouteDb, StationDb},
+    utils::str_between_str,
+};
 
 /// Checks the delays of the routes from the given channel and saves them to the DB
 pub async fn check_delays(
@@ -138,6 +141,8 @@ async fn check_delay_until_route_completion(
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
     let mut train_has_started = route.real_start_time.is_some();
+    let stations: HashMap<String, StationDb, RandomState> =
+        HashMap::from_iter(get_stations().into_iter().map(|s| (s.id.clone(), s)));
 
     loop {
         if Utc::now() > route.expected_end_time + chrono::Duration::hours(12) {
@@ -154,14 +159,14 @@ async fn check_delay_until_route_completion(
             return Ok(());
         }
 
-        let delay: TrainStatus = match get_route_delay(&route).await {
+        let status: TrainStatus = match get_route_status(&route).await {
             Ok(dr) => match dr {
-                DelayResponse::TrainStatus(ts) => ts,
-                DelayResponse::TrainNotEvidented => {
+                StatusResponse::TrainStatus(ts) => ts,
+                StatusResponse::TrainNotEvidented => {
                     info!(train_not_evidented = true);
                     return Ok(());
                 }
-                DelayResponse::UnisysError => {
+                StatusResponse::UnisysError => {
                     info!(unisys_error = true);
                     sleep(Duration::from_secs(60))
                         .instrument(info_span!("Waiting 60 seconds"))
@@ -178,21 +183,71 @@ async fn check_delay_until_route_completion(
             }
         };
 
-        match (delay.delay, delay.status) {
+        let current_stops = route
+            .stops
+            .iter()
+            .filter(|s| {
+                let station = match stations.get(&s.id) {
+                    Some(s) => s,
+                    None => {
+                        error!("Got unknown stop id");
+                        return false;
+                    }
+                };
+
+                match is_delay_station_similar_to_stop_name(&status.station, &station.name) {
+                    Ok(r) => return r,
+                    Err(e) => {
+                        error!("{:?}", e);
+                        return false;
+                    }
+                }
+            })
+            .collect_vec();
+
+        let current_stop = current_stops
+            .first()
+            .context("Couldn't find stop from delay stop name")?;
+
+        match (status.delay, status.status) {
             (Delay::NoData, _) => {} // wait for data
-            (Delay::WaitingToDepart, Status::DepartingFromStation(_) | Status::Arriving(_)) => {} // wait for train to start
-            (Delay::WaitingToDepart, Status::Formed(_)) => {} // wait for train to start
-            (Delay::OnTime, Status::DepartingFromStation(_) | Status::Arriving(_)) => {
+            (
+                Delay::WaitingToDepart,
+                Status::DepartingFromStation(_) | Status::Arriving(_) | Status::Formed(_),
+            ) => {} // wait for train to start
+            (Delay::OnTime, Status::DepartingFromStation(_)) => {
                 if route.real_start_time.is_none() {
                     train_has_started = true;
                     route.real_start_time = Some(route.expected_start_time);
                     update_route_real_times(&route, &pool).await?;
                 }
+
+                update_stop_departure(
+                    route.expected_start_time,
+                    &route.id,
+                    current_stop.sequence,
+                    0,
+                    pool.clone(),
+                )
+                .await?;
             }
-            (
-                Delay::Late { minutes_late },
-                Status::DepartingFromStation(_) | Status::Arriving(_),
-            ) => {
+            (Delay::OnTime, Status::Arriving(_)) => {
+                if route.real_start_time.is_none() {
+                    train_has_started = true;
+                    route.real_start_time = Some(route.expected_start_time);
+                    update_route_real_times(&route, &pool).await?;
+                }
+
+                update_stop_arrival(
+                    route.expected_start_time,
+                    &route.id,
+                    current_stop.sequence,
+                    0,
+                    pool.clone(),
+                )
+                .await?;
+            }
+            (Delay::Late { minutes_late }, Status::DepartingFromStation(_)) => {
                 if route.real_start_time.is_none() {
                     train_has_started = true;
                     route.real_start_time = Some(
@@ -200,6 +255,33 @@ async fn check_delay_until_route_completion(
                     );
                     update_route_real_times(&route, &pool).await?;
                 }
+
+                update_stop_departure(
+                    route.expected_start_time,
+                    &route.id,
+                    current_stop.sequence,
+                    minutes_late,
+                    pool.clone(),
+                )
+                .await?;
+            }
+            (Delay::Late { minutes_late }, Status::Arriving(_)) => {
+                if route.real_start_time.is_none() {
+                    train_has_started = true;
+                    route.real_start_time = Some(
+                        route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
+                    );
+                    update_route_real_times(&route, &pool).await?;
+                }
+
+                update_stop_arrival(
+                    route.expected_start_time,
+                    &route.id,
+                    current_stop.sequence,
+                    minutes_late,
+                    pool.clone(),
+                )
+                .await?;
             }
             (Delay::OnTime, Status::FinishedDriving(_)) => {
                 if train_has_started {
@@ -207,6 +289,15 @@ async fn check_delay_until_route_completion(
                     update_route_real_times(&route, &pool).await?;
                     return Ok(());
                 }
+
+                update_stop_arrival(
+                    route.expected_start_time,
+                    &route.id,
+                    current_stop.sequence,
+                    0,
+                    pool.clone(),
+                )
+                .await?;
             }
             (Delay::Late { minutes_late }, Status::FinishedDriving(_)) => {
                 if train_has_started {
@@ -216,6 +307,15 @@ async fn check_delay_until_route_completion(
                     update_route_real_times(&route, &pool).await?;
                     return Ok(());
                 }
+
+                update_stop_arrival(
+                    route.expected_start_time,
+                    &route.id,
+                    current_stop.sequence,
+                    minutes_late,
+                    pool.clone(),
+                )
+                .await?;
             }
             _ => {
                 error!(invalid_variant = true);
@@ -229,8 +329,88 @@ async fn check_delay_until_route_completion(
     }
 }
 
+fn get_stations() -> Vec<StationDb> {
+    todo!()
+}
+
+fn is_delay_station_similar_to_stop_name(
+    delay_station_name: &str,
+    stop_name: &str,
+) -> Result<bool, anyhow::Error> {
+    let binding = delay_station_name.to_lowercase().replace(".", "");
+    let delay_station_words = binding.split(" ").collect_vec();
+
+    let binding = stop_name.to_lowercase().replace(".", "");
+    let stop_words = binding.split(" ").collect_vec();
+
+    if delay_station_words.len() != stop_words.len() {
+        return Ok(false);
+    }
+
+    let are_all_words_similar = delay_station_words
+        .iter()
+        .zip(stop_words.iter())
+        .map(|(w1, w2)| w1.contains(w2) || w2.contains(w1))
+        .reduce(|acc, e| acc && e)
+        .context("empty iterator???")?;
+
+    return Ok(are_all_words_similar);
+}
+
+async fn update_stop_arrival(
+    route_expected_start_time: DateTime<Utc>,
+    route_id: &str,
+    sequence: i16,
+    delay_in_minutes: i32,
+    pool: Pool<Postgres>,
+) -> Result<(), anyhow::Error> {
+    let real_arrival =
+        route_expected_start_time + chrono::Duration::minutes(delay_in_minutes.into());
+    query!(
+        "
+    UPDATE stops
+    SET real_arrival = $1
+    where route_expected_start_time = $2 and route_id = $3 and sequence = $4
+    ",
+        real_arrival.naive_utc(),
+        route_expected_start_time.naive_utc(),
+        route_id,
+        sequence,
+    )
+    .execute(&pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn update_stop_departure(
+    route_expected_start_time: DateTime<Utc>,
+    route_id: &str,
+    sequence: i16,
+    delay_in_minutes: i32,
+    pool: Pool<Postgres>,
+) -> Result<(), anyhow::Error> {
+    let real_arrival =
+        route_expected_start_time + chrono::Duration::minutes(delay_in_minutes.into());
+    query!(
+        "
+UPDATE stops
+SET real_arrival = $1
+where route_expected_start_time = $2 and route_id = $3 and sequence = $4
+",
+        real_arrival.naive_utc(),
+        route_expected_start_time.naive_utc(),
+        route_id,
+        sequence,
+    )
+    .execute(&pool)
+    .await?;
+
+    Ok(())
+}
+
 #[tracing::instrument(ret, err)]
-async fn get_route_delay(route: &RouteDb) -> Result<DelayResponse, anyhow::Error> {
+async fn get_route_status(route: &RouteDb) -> Result<StatusResponse, anyhow::Error> {
     let url = format!(
         "https://traindelay.hzpp.hr/train/delay?trainId={}",
         route.route_number
@@ -261,13 +441,13 @@ async fn get_route_delay(route: &RouteDb) -> Result<DelayResponse, anyhow::Error
 }
 
 #[tracing::instrument(ret, err)]
-fn parse_delay_html(html: String) -> Result<DelayResponse, anyhow::Error> {
+fn parse_delay_html(html: String) -> Result<StatusResponse, anyhow::Error> {
     if html.contains("Unisys") {
-        return Ok(DelayResponse::UnisysError);
+        return Ok(StatusResponse::UnisysError);
     }
 
     if html.contains("Vlak nije u evidenciji") {
-        return Ok(DelayResponse::TrainNotEvidented);
+        return Ok(StatusResponse::TrainNotEvidented);
     }
 
     let lines = html.lines().collect_vec();
@@ -281,7 +461,8 @@ fn parse_delay_html(html: String) -> Result<DelayResponse, anyhow::Error> {
 
     let station = str_between_str(station_line, "</I><strong>", "<br>")
         .ok_or_else(|| anyhow!("Couldn't locate station"))?
-        .to_string();
+        .to_string()
+        .replace("+", " ");
 
     let status_line = *lines
         .iter()
@@ -339,7 +520,7 @@ fn parse_delay_html(html: String) -> Result<DelayResponse, anyhow::Error> {
         bail!("Unknown delay response");
     };
 
-    Ok(DelayResponse::TrainStatus(TrainStatus {
+    Ok(StatusResponse::TrainStatus(TrainStatus {
         delay,
         station,
         status,
@@ -347,7 +528,7 @@ fn parse_delay_html(html: String) -> Result<DelayResponse, anyhow::Error> {
 }
 
 #[derive(Clone, Debug)]
-enum DelayResponse {
+enum StatusResponse {
     TrainStatus(TrainStatus),
     TrainNotEvidented,
     UnisysError,
@@ -399,6 +580,31 @@ async fn update_route_real_times(
 }
 
 mod tests {
+
+    #[test]
+    fn is_delay_station_similar_to_stop_name_test1() {
+        let str1 = "SV. IVAN ŽABNO";
+        let str2 = "SVeti IVAN ŽABNO";
+
+        assert!(super::is_delay_station_similar_to_stop_name(str1, str2).unwrap());
+    }
+
+    #[test]
+    fn is_delay_station_similar_to_stop_name_test2() {
+        let str1 = "Zagreb GL. Kol.";
+        let str2 = "Zagreb Glavni kolodvor";
+
+        assert!(super::is_delay_station_similar_to_stop_name(str1, str2).unwrap());
+    }
+
+    #[test]
+    fn is_delay_station_similar_to_stop_name_test3() {
+        let str1 = "Zagreb GL. Kol.";
+        let str2 = "Zagreb zapadni kolodvor";
+
+        assert!(!super::is_delay_station_similar_to_stop_name(str1, str2).unwrap());
+    }
+
     #[test]
     fn test_parse_html() -> Result<(), anyhow::Error> {
         let html = r##"<HTML>

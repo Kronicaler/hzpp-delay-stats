@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nUPDATE stops\nSET real_arrival = $1\nwhere route_expected_start_time = $2 and route_id = $3 and sequence = $4\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "Timestamp",
+        "Text",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0ab6a1b47200ab847586ccb4e537baad169d292a7178c7f14489de69e643620"
+}

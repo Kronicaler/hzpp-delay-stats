@@ -256,3 +256,11 @@ pub struct StationDb {
     pub latitude: f64,
     pub longitude: f64,
 }
+
+impl std::hash::Hash for StationDb {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+        self.code.hash(state);
+        self.name.hash(state);
+    }
+}
