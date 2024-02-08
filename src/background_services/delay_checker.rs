@@ -430,6 +430,7 @@ fn is_delay_station_similar_to_stop_name(
     return Ok(are_all_words_similar);
 }
 
+#[tracing::instrument(err)]
 async fn update_stop_arrival(
     stop: &StopDb,
     route_expected_start_time: DateTime<Utc>,
@@ -453,6 +454,7 @@ async fn update_stop_arrival(
     Ok(())
 }
 
+#[tracing::instrument(err)]
 async fn update_stop_departure(
     stop: &StopDb,
     route_expected_start_time: DateTime<Utc>,
