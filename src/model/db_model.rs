@@ -6,7 +6,7 @@ use itertools::Itertools;
 use sqlx::prelude::FromRow;
 use tracing::error;
 
-use super::hzpp_api_model::{HzppRoute, HzppStop};
+use super::hzpp_api_model::{HzppRoute, HzppStation, HzppStop};
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -16,8 +16,11 @@ pub struct RouteDb {
     pub route_number: i32,
     pub source: String,
     pub destination: String,
+    #[sqlx(try_from = "i16")]
     pub bikes_allowed: BikesAllowed,
+    #[sqlx(try_from = "i16")]
     pub wheelchair_accessible: WheelchairAccessible,
+    #[sqlx(try_from = "i16")]
     pub route_type: RouteType,
     pub real_start_time: Option<DateTime<Utc>>,
     /// The departure time of the first stop
@@ -26,6 +29,7 @@ pub struct RouteDb {
     /// The arrival time of the last stop
     pub expected_end_time: DateTime<Utc>,
     #[derivative(Debug = "ignore")]
+    #[sqlx(skip)]
     pub stops: Vec<StopDb>,
 }
 
@@ -51,7 +55,7 @@ impl RouteDb {
         let (stops, errors): (Vec<_>, Vec<_>) = hzpp_route
             .stops
             .iter()
-            .map(|s| StopDb::try_from_hzpp_stop(s.clone(), &hzpp_route, &date, "".to_string()))
+            .map(|s| StopDb::try_from_hzpp_stop(s.clone(), &hzpp_route, &date))
             .partition_result();
 
         if errors.len() != 0 {
@@ -200,7 +204,6 @@ impl TryFrom<i16> for WheelchairAccessible {
 
 #[derive(Clone, Debug, FromRow)]
 pub struct StopDb {
-    pub id: String,
     pub station_id: String,
     pub route_id: String,
     pub route_expected_start_time: DateTime<Utc>,
@@ -216,7 +219,6 @@ impl StopDb {
         hzpp_stop: HzppStop,
         hzpp_route: &HzppRoute,
         date: &DateTime<Tz>,
-        station_id: String,
     ) -> Result<Self, anyhow::Error> {
         let (expected_arrival, expected_departure) =
             convert_hzpp_time_to_utc(&date, hzpp_stop.arrival_time, hzpp_stop.departure_time)?;
@@ -235,8 +237,7 @@ impl StopDb {
         )?;
 
         Ok(StopDb {
-            id: hzpp_stop.stop_id,
-            station_id,
+            station_id: hzpp_stop.stop_id,
             route_id: hzpp_route.route_id.clone(),
             route_expected_start_time: route_expected_start_time.to_utc(),
             sequence: hzpp_stop.sequence.try_into()?,
@@ -255,6 +256,18 @@ pub struct StationDb {
     pub name: String,
     pub latitude: f64,
     pub longitude: f64,
+}
+
+impl From<HzppStation> for StationDb {
+    fn from(s: HzppStation) -> Self {
+        StationDb {
+            code: s.stop_code,
+            id: s.stop_id,
+            latitude: s.stop_lat,
+            longitude: s.stop_lng,
+            name: s.stop_name,
+        }
+    }
 }
 
 impl std::hash::Hash for StationDb {

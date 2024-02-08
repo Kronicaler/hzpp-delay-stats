@@ -1,12 +1,16 @@
 //! Responsible for fetching and saving routes
-use crate::model::{db_model::RouteDb, hzpp_api_model::HzppRoute};
+use crate::model::{
+    db_model::{RouteDb, StationDb},
+    hzpp_api_model::{HzppRoute, HzppStation},
+};
+use anyhow::Context;
 use chrono::DateTime;
 use chrono_tz::{Europe::Zagreb, Tz};
 use itertools::Itertools;
 use sqlx::{postgres::PgRow, Postgres, QueryBuilder, Row};
 use std::{backtrace::Backtrace, collections::HashSet};
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, error, info, info_span, Instrument};
+use tracing::{error, info, info_span, Instrument};
 
 /// Gets todays routes and saves them to the DB.
 /// If a duplicate route is already in the DB then it's discarded.
@@ -14,8 +18,14 @@ use tracing::{debug, error, info, info_span, Instrument};
 pub async fn get_todays_data(
     pool: &sqlx::Pool<Postgres>,
     delay_checker_sender: Sender<Vec<RouteDb>>,
-) -> anyhow::Result<()> {
+) -> Result<(), anyhow::Error> {
     let today = chrono::Local::now().with_timezone(&Zagreb);
+
+    let stations = fetch_stations()
+        .await?
+        .into_iter()
+        .map(|s| StationDb::from(s))
+        .collect_vec();
 
     let routes = fetch_routes(today)
         .await?
@@ -30,7 +40,7 @@ pub async fn get_todays_data(
         })
         .collect_vec();
 
-    let saved_routes = save_data(&routes, pool.clone()).await?;
+    let saved_routes = save_data(&routes, stations, pool.clone()).await?;
 
     delay_checker_sender.send(saved_routes).await?;
 
@@ -42,9 +52,36 @@ pub async fn get_todays_data(
 #[tracing::instrument(err, skip(routes))]
 async fn save_data(
     routes: &Vec<RouteDb>,
+    stations: Vec<StationDb>,
     pool: sqlx::Pool<Postgres>,
 ) -> Result<Vec<RouteDb>, anyhow::Error> {
     let transaction = pool.begin().await?;
+
+    let mut query_builder = QueryBuilder::new(
+        "INSERT into stations (
+                id,
+                code,
+                name,
+                latitude,
+                longitude
+            )",
+    );
+
+    query_builder.push_values(&stations, |mut b, station| {
+        b.push_bind(station.id.clone())
+            .push_bind(station.code)
+            .push_bind(station.name.clone())
+            .push_bind(station.latitude)
+            .push_bind(station.longitude);
+    });
+
+    query_builder.push(" ON CONFLICT ( id ) DO NOTHING");
+
+    query_builder
+        .build()
+        .execute(&pool)
+        .instrument(info_span!("Inserting stations"))
+        .await?;
 
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO routes (
@@ -87,41 +124,43 @@ async fn save_data(
         .instrument(info_span!("Inserting routes"))
         .await?;
 
-    let mut query_builder = QueryBuilder::new(
-        "INSERT into stops (
-            station_id,
-            route_id,
-            route_expected_start_time,
-            sequence,
-            real_arrival,
-            expected_arrival,
-            real_departure,
-            expected_departure
-        )",
-    );
+    let all_stops = routes.iter().flat_map(|r| r.stops.clone()).collect_vec();
+    let stops_chunks = all_stops.chunks(1024).collect_vec();
 
-    let stops = routes.iter().flat_map(|r| &r.stops).collect_vec();
+    for stops in stops_chunks {
+        let mut query_builder = QueryBuilder::new(
+            "INSERT into stops (
+                station_id,
+                route_id,
+                route_expected_start_time,
+                sequence,
+                real_arrival,
+                expected_arrival,
+                real_departure,
+                expected_departure
+            )",
+        );
 
-    query_builder.push_values(&stops, |mut b, stop| {
-        b.push_bind(&stop.station_id)
-            .push_bind(&stop.route_id)
-            .push_bind(stop.route_expected_start_time)
-            .push_bind(stop.sequence)
-            .push_bind(stop.real_arrival)
-            .push_bind(stop.expected_arrival)
-            .push_bind(stop.real_departure)
-            .push_bind(stop.expected_departure);
-    });
+        query_builder.push_values(stops, |mut b, stop| {
+            b.push_bind(&stop.station_id)
+                .push_bind(&stop.route_id)
+                .push_bind(stop.route_expected_start_time)
+                .push_bind(stop.sequence)
+                .push_bind(stop.real_arrival)
+                .push_bind(stop.expected_arrival)
+                .push_bind(stop.real_departure)
+                .push_bind(stop.expected_departure);
+        });
 
-    query_builder.push(" ON CONFLICT ( route_id, route_expected_start_time, sequence ) DO NOTHING");
+        query_builder
+            .push(" ON CONFLICT ( route_id, route_expected_start_time, sequence ) DO NOTHING");
 
-    debug!("Routes: {:#?}\nStops: {:#?}", routes, stops);
-
-    query_builder
-        .build()
-        .execute(&pool)
-        .instrument(info_span!("Inserting stops"))
-        .await?;
+        query_builder
+            .build()
+            .execute(&pool)
+            .instrument(info_span!("Inserting stops"))
+            .await?;
+    }
 
     transaction.commit().await?;
 
@@ -163,6 +202,28 @@ async fn fetch_routes(date: DateTime<Tz>) -> Result<Vec<HzppRoute>, GetRoutesErr
     info!("got {} routes", routes.len());
 
     Ok(routes)
+}
+
+#[tracing::instrument(err)]
+async fn fetch_stations() -> Result<Vec<HzppStation>, anyhow::Error> {
+    let request = format!("https://josipsalkovic.com/hzpp/planer/v3/getStops.php");
+
+    let response = reqwest::get(&request)
+        .instrument(info_span!("Fetching stations"))
+        .await?
+        .error_for_status()?;
+
+    let stations_string = response
+        .text()
+        .instrument(info_span!("Reading body of response"))
+        .await?;
+
+    let stations: Vec<HzppStation> =
+        serde_json::from_str(&stations_string).context("Error parsing stations")?;
+
+    info!("got {} stations", stations.len());
+
+    Ok(stations)
 }
 
 #[derive(thiserror::Error, Debug)]

@@ -2,8 +2,8 @@
 #![feature(try_blocks)]
 
 use anyhow::Result;
-use background_services::delay_checker::check_delays;
 use background_services::data_fetcher::get_todays_data;
+use background_services::delay_checker::check_delays;
 use dotenvy::dotenv;
 use model::db_model::RouteDb;
 use opentelemetry::trace::TracerProvider as _;
@@ -62,8 +62,6 @@ async fn main() -> Result<()> {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
-    let stdout_log = tracing_subscriber::fmt::layer().pretty();
-
     let appender = tracing_appender::rolling::daily("./logs", "hzpp_delay_stats.log");
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(appender);
 
@@ -75,7 +73,6 @@ async fn main() -> Result<()> {
 
     Registry::default()
         .with(telemetry_layer)
-        .with(stdout_log)
         .with(file_log)
         .with(env_filter)
         .init();
@@ -90,8 +87,7 @@ async fn main() -> Result<()> {
     let route_fetcher_pool = pool.clone();
     let route_fetcher = spawn(async move {
         loop {
-            if let Err(e) =
-                get_todays_data(&route_fetcher_pool, delay_checker_sender.clone()).await
+            if let Err(e) = get_todays_data(&route_fetcher_pool, delay_checker_sender.clone()).await
             {
                 error!("{e}");
                 sleep(Duration::from_secs(60)).await;
@@ -110,8 +106,16 @@ async fn main() -> Result<()> {
     });
 
     select! {
-        _ = route_fetcher =>{},
-        _ = delay_checker =>{},
+    res = route_fetcher =>{
+        match res{
+            Ok(_) => todo!(),
+            Err(err) => error!("{:?}",err),
+        }},
+    res = delay_checker =>{
+        match res{
+            Ok(_) => todo!(),
+            Err(err) => error!("{:?}",err),
+        }},
     }
 
     Ok(())

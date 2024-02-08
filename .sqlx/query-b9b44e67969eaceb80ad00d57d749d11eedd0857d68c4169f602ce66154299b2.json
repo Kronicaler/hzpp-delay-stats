@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "Select * from stations",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "longitude",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b9b44e67969eaceb80ad00d57d749d11eedd0857d68c4169f602ce66154299b2"
+}

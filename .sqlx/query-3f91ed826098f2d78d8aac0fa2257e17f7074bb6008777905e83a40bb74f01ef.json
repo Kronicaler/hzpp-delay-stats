@@ -5,9 +5,9 @@
     "columns": [],
     "parameters": {
       "Left": [
-        "Timestamp",
-        "Timestamp",
-        "Timestamp",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
         "Text"
       ]
     },

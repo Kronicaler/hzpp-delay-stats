@@ -48,6 +48,15 @@ pub struct HzppStop {
     pub sequence: i32,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct HzppStation {
+    pub stop_id: String,
+    pub stop_code: i32,
+    pub stop_name: String,
+    pub stop_lat: f64,
+    pub stop_lng: f64,
+}
+
 fn timestamp_from_hzpp_time<'de, D>(deserializer: D) -> Result<(u8, u8), D::Error>
 where
     D: Deserializer<'de>,

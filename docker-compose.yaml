@@ -37,3 +37,5 @@ services:
       context: ./
       dockerfile: dockerfile
     restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs/

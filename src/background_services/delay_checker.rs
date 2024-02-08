@@ -3,16 +3,16 @@
 use std::{collections::HashMap, hash::RandomState, time::Duration, vec};
 
 use anyhow::{anyhow, bail, Context};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use chrono_tz::Europe::Zagreb;
 use itertools::Itertools;
 use reqwest::{header::HeaderValue, Client, Method, Url};
-use sqlx::{postgres::PgRow, query, Pool, Postgres, Row};
-use tokio::{spawn, sync::mpsc::Receiver, time::sleep};
+use sqlx::{query, query_as, Pool, Postgres};
+use tokio::{spawn, sync::mpsc::Receiver, task::JoinSet, time::sleep};
 use tracing::{error, info, info_span, Instrument};
 
 use crate::{
-    model::db_model::{RouteDb, StationDb},
+    model::db_model::{RouteDb, StationDb, StopDb},
     utils::str_between_str,
 };
 
@@ -23,7 +23,20 @@ pub async fn check_delays(
 ) -> Result<(), anyhow::Error> {
     let mut buffer: Vec<Vec<RouteDb>> = vec![];
 
-    spawn_route_delay_tasks(get_unfinished_routes(pool).await?, pool).await;
+    let pool1 = pool.clone();
+    spawn(
+        async move {
+            let unfinished_routes = match get_unfinished_routes(&pool1).await {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("{:?}", e);
+                    return;
+                }
+            };
+            spawn_route_delay_tasks(unfinished_routes, &pool1).await;
+        }
+        .instrument(info_span!("spawn_unfinished_route_tasks")),
+    );
 
     while delay_checker_receiver.recv_many(&mut buffer, 32).await != 0 {
         let routes = buffer.drain(..).flatten().collect_vec();
@@ -50,8 +63,9 @@ async fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
     }
 }
 
+#[tracing::instrument(err, skip(pool))]
 async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, anyhow::Error> {
-    let x = query(
+    let routes: Vec<RouteDb> = query_as(
         "SELECT 
         id,
         route_number,
@@ -66,48 +80,36 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
         real_end_time
         from routes where real_end_time IS NULL or real_start_time IS NULL",
     )
-    .map(|row: PgRow| RouteDb {
-        id: row.try_get("id").unwrap(),
-        route_number: row.try_get("route_number").unwrap(),
-        source: row.try_get("source").unwrap(),
-        destination: row.try_get("destination").unwrap(),
-        bikes_allowed: row
-            .try_get::<i16, &str>("bikes_allowed")
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        wheelchair_accessible: row
-            .try_get::<i16, &str>("wheelchair_accessible")
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        route_type: row
-            .try_get::<i16, &str>("route_type")
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        expected_start_time: row
-            .try_get::<NaiveDateTime, &str>("expected_start_time")
-            .unwrap()
-            .and_utc(),
-        expected_end_time: row
-            .try_get::<NaiveDateTime, &str>("expected_end_time")
-            .unwrap()
-            .and_utc(),
-        real_start_time: row
-            .try_get::<Option<NaiveDateTime>, &str>("real_start_time")
-            .unwrap()
-            .map(|dt| dt.and_utc()),
-        real_end_time: row
-            .try_get::<Option<NaiveDateTime>, &str>("real_end_time")
-            .unwrap()
-            .map(|dt| dt.and_utc()),
-        stops: vec![],
-    })
     .fetch_all(pool)
     .await?;
 
-    Ok(x)
+    let mut set = JoinSet::new();
+
+    for mut route in routes.into_iter() {
+        let pool = pool.clone();
+        set.spawn(async move {
+            let stops: Vec<StopDb> = query_as(
+                "SELECT * from stops where route_id = $1 and route_expected_start_time = $2",
+            )
+            .bind(route.id.clone())
+            .bind(route.expected_start_time)
+            .fetch_all(&pool)
+            .await?;
+
+            route.stops = stops;
+
+            Ok::<RouteDb, anyhow::Error>(route)
+        });
+    }
+
+    let mut routes = vec![];
+
+    while let Some(res) = set.join_next().await {
+        let route = res??;
+        routes.push(route);
+    }
+
+    Ok(routes)
 }
 
 async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
@@ -141,8 +143,12 @@ async fn check_delay_until_route_completion(
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
     let mut train_has_started = route.real_start_time.is_some();
-    let stations: HashMap<String, StationDb, RandomState> =
-        HashMap::from_iter(get_stations().into_iter().map(|s| (s.id.clone(), s)));
+    let stations: HashMap<String, StationDb, RandomState> = HashMap::from_iter(
+        get_stations(pool.clone())
+            .await?
+            .into_iter()
+            .map(|s| (s.id.clone(), s)),
+    );
 
     loop {
         if Utc::now() > route.expected_end_time + chrono::Duration::hours(12) {
@@ -187,7 +193,7 @@ async fn check_delay_until_route_completion(
             .stops
             .iter()
             .filter(|s| {
-                let station = match stations.get(&s.id) {
+                let station = match stations.get(&s.station_id) {
                     Some(s) => s,
                     None => {
                         error!("Got unknown stop id");
@@ -195,6 +201,10 @@ async fn check_delay_until_route_completion(
                     }
                 };
 
+                info!(
+                    "is_delay_station_similar_to_stop_name({},{})",
+                    &status.station, &station.name
+                );
                 match is_delay_station_similar_to_stop_name(&status.station, &station.name) {
                     Ok(r) => return r,
                     Err(e) => {
@@ -329,8 +339,12 @@ async fn check_delay_until_route_completion(
     }
 }
 
-fn get_stations() -> Vec<StationDb> {
-    todo!()
+async fn get_stations(pool: Pool<Postgres>) -> Result<Vec<StationDb>, anyhow::Error> {
+    let res = query_as!(StationDb, "Select * from stations")
+        .fetch_all(&pool)
+        .await?;
+
+    return Ok(res);
 }
 
 fn is_delay_station_similar_to_stop_name(
@@ -338,10 +352,10 @@ fn is_delay_station_similar_to_stop_name(
     stop_name: &str,
 ) -> Result<bool, anyhow::Error> {
     let binding = delay_station_name.to_lowercase().replace(".", "");
-    let delay_station_words = binding.split(" ").collect_vec();
+    let delay_station_words = binding.trim().split(" ").collect_vec();
 
     let binding = stop_name.to_lowercase().replace(".", "");
-    let stop_words = binding.split(" ").collect_vec();
+    let stop_words = binding.trim().split(" ").collect_vec();
 
     if delay_station_words.len() != stop_words.len() {
         return Ok(false);
@@ -372,8 +386,8 @@ async fn update_stop_arrival(
     SET real_arrival = $1
     where route_expected_start_time = $2 and route_id = $3 and sequence = $4
     ",
-        real_arrival.naive_utc(),
-        route_expected_start_time.naive_utc(),
+        real_arrival,
+        route_expected_start_time,
         route_id,
         sequence,
     )
@@ -398,8 +412,8 @@ UPDATE stops
 SET real_arrival = $1
 where route_expected_start_time = $2 and route_id = $3 and sequence = $4
 ",
-        real_arrival.naive_utc(),
-        route_expected_start_time.naive_utc(),
+        real_arrival,
+        route_expected_start_time,
         route_id,
         sequence,
     )
@@ -484,7 +498,7 @@ fn parse_delay_html(html: String) -> Result<StatusResponse, anyhow::Error> {
         .context("Couldn't parse status_date")?;
     let status_time = NaiveTime::parse_from_str(&status_time_line[12..17], "%H:%M")
         .context("Couldn't parse status_time")?;
-    let status_datetime = status_date
+    let status_datetime: DateTime<Utc> = status_date
         .and_time(status_time)
         .and_local_timezone(Zagreb)
         .earliest()
@@ -568,9 +582,9 @@ async fn update_route_real_times(
     SET real_start_time = $1, real_end_time=$2
     where expected_start_time = $3 and id = $4
     ",
-        route.real_start_time.map(|dt| dt.naive_utc()),
-        route.real_end_time.map(|dt| dt.naive_utc()),
-        route.expected_start_time.naive_utc(),
+        route.real_start_time,
+        route.real_end_time,
+        route.expected_start_time,
         route.id
     )
     .execute(pool)
@@ -603,6 +617,14 @@ mod tests {
         let str2 = "Zagreb zapadni kolodvor";
 
         assert!(!super::is_delay_station_similar_to_stop_name(str1, str2).unwrap());
+    }
+
+    #[test]
+    fn is_delay_station_similar_to_stop_name_test4() {
+        let str1 = "Novska";
+        let str2 = "NOVSKA";
+
+        assert!(super::is_delay_station_similar_to_stop_name(str1, str2).unwrap());
     }
 
     #[test]
