@@ -206,6 +206,7 @@ async fn check_delay_until_route_completion(
                     get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
                 let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
+                    info!("{:?}", current_stop);
                     if current_stop.real_departure.is_none() {
                         current_stop.real_departure = Some(route.expected_start_time);
                         update_stop_departure(

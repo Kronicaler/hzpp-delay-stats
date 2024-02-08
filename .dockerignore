@@ -2,3 +2,4 @@ target
 logs
 .env
 postgres
+.git
