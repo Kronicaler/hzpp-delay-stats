@@ -360,6 +360,7 @@ async fn check_delay_until_route_completion(
     }
 }
 
+#[tracing::instrument(ret, skip(stations))]
 fn get_current_stop_idx(
     route: &RouteDb,
     stations: &HashMap<String, StationDb>,
@@ -406,6 +407,7 @@ async fn get_stations(pool: Pool<Postgres>) -> Result<Vec<StationDb>, anyhow::Er
     return Ok(res);
 }
 
+#[tracing::instrument(ret, err)]
 fn is_delay_station_similar_to_stop_name(
     delay_station_name: &str,
     stop_name: &str,
