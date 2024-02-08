@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\nUPDATE stops\nSET real_arrival = $1\nwhere route_expected_start_time = $2 and route_id = $3 and sequence = $4\n",
+  "query": "\nUPDATE stops\nSET real_departure = $1\nwhere route_expected_start_time = $2 and route_id = $3 and sequence = $4\n",
   "describe": {
     "columns": [],
     "parameters": {
@@ -13,5 +13,5 @@
     },
     "nullable": []
   },
-  "hash": "c0ab6a1b47200ab847586ccb4e537baad169d292a7178c7f14489de69e643620"
+  "hash": "019000bdbac84e9c014d8bd98f0d8b8ce54143098cb1900f8849b5f45a497cad"
 }

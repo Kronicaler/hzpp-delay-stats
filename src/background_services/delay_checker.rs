@@ -88,11 +88,12 @@ async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, an
     for mut route in routes.into_iter() {
         let pool = pool.clone();
         set.spawn(async move {
-            let stops: Vec<StopDb> = query_as(
+            let stops: Vec<StopDb> = query_as!(
+                StopDb,
                 "SELECT * from stops where route_id = $1 and route_expected_start_time = $2",
+                route.id.clone(),
+                route.expected_start_time
             )
-            .bind(route.id.clone())
-            .bind(route.expected_start_time)
             .fetch_all(&pool)
             .await?;
 
@@ -208,6 +209,7 @@ async fn check_delay_until_route_completion(
                 }
 
                 let current_stop = get_current_stop(&mut route.stops, &stations, &status);
+                info!(current_stop= ?current_stop);
                 if let Some(current_stop) = current_stop {
                     if current_stop.real_departure.is_none() {
                         current_stop.real_departure = Some(
@@ -284,6 +286,7 @@ async fn check_delay_until_route_completion(
     }
 }
 
+#[tracing::instrument(skip(stops, stations))]
 fn get_current_stop<'a>(
     stops: &'a mut Vec<StopDb>,
     stations: &HashMap<String, StationDb>,
@@ -313,7 +316,9 @@ fn get_current_stop<'a>(
         })
         .collect_vec();
 
-    current_stops.pop()
+    let current_stop = current_stops.pop();
+    info!(current_stop= ?current_stop);
+    current_stop
 }
 
 async fn get_stations(pool: Pool<Postgres>) -> Result<Vec<StationDb>, anyhow::Error> {
@@ -324,7 +329,6 @@ async fn get_stations(pool: Pool<Postgres>) -> Result<Vec<StationDb>, anyhow::Er
     return Ok(res);
 }
 
-#[tracing::instrument(ret, err)]
 fn is_delay_station_similar_to_stop_name(
     delay_station_name: &str,
     stop_name: &str,
@@ -392,10 +396,10 @@ async fn update_stop_departure(
     query!(
         "
 UPDATE stops
-SET real_arrival = $1
+SET real_departure = $1
 where route_expected_start_time = $2 and route_id = $3 and sequence = $4
 ",
-        stop.real_arrival,
+        stop.real_departure,
         route_expected_start_time,
         route_id,
         stop.sequence,
