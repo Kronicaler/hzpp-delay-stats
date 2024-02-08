@@ -189,34 +189,6 @@ async fn check_delay_until_route_completion(
             }
         };
 
-        let current_stops = route
-            .stops
-            .iter()
-            .filter(|s| {
-                let station = match stations.get(&s.station_id) {
-                    Some(s) => s,
-                    None => {
-                        error!("Got unknown stop id");
-                        return false;
-                    }
-                };
-
-                info!(
-                    "is_delay_station_similar_to_stop_name({},{})",
-                    &status.station, &station.name
-                );
-                match is_delay_station_similar_to_stop_name(&status.station, &station.name) {
-                    Ok(r) => return r,
-                    Err(e) => {
-                        error!("{:?}", e);
-                        return false;
-                    }
-                }
-            })
-            .collect_vec();
-
-        let current_stop = current_stops.first();
-
         match (status.delay, status.status) {
             (Delay::NoData, _) => {} // wait for data
             (
@@ -230,15 +202,20 @@ async fn check_delay_until_route_completion(
                     update_route_real_times(&route, &pool).await?;
                 }
 
+                let current_stop_idx =
+                    get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
+                let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
-                    update_stop_departure(
-                        route.expected_start_time,
-                        &route.id,
-                        current_stop.sequence,
-                        0,
-                        pool.clone(),
-                    )
-                    .await?;
+                    if current_stop.real_departure.is_none() {
+                        current_stop.real_departure = Some(route.expected_start_time);
+                        update_stop_departure(
+                            current_stop,
+                            route.expected_start_time,
+                            &route.id,
+                            pool.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             (Delay::OnTime, Status::Arriving(_)) => {
@@ -247,16 +224,21 @@ async fn check_delay_until_route_completion(
                     route.real_start_time = Some(route.expected_start_time);
                     update_route_real_times(&route, &pool).await?;
                 }
-                
+
+                let current_stop_idx =
+                    get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
+                let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
-                    update_stop_arrival(
-                        route.expected_start_time,
-                        &route.id,
-                        current_stop.sequence,
-                        0,
-                        pool.clone(),
-                    )
-                    .await?;
+                    if current_stop.real_arrival.is_none() {
+                        current_stop.real_arrival = Some(route.expected_start_time);
+                        update_stop_arrival(
+                            current_stop,
+                            route.expected_start_time,
+                            &route.id,
+                            pool.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             (Delay::Late { minutes_late }, Status::DepartingFromStation(_)) => {
@@ -268,15 +250,23 @@ async fn check_delay_until_route_completion(
                     update_route_real_times(&route, &pool).await?;
                 }
 
+                let current_stop_idx =
+                    get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
+                let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
-                    update_stop_departure(
-                        route.expected_start_time,
-                        &route.id,
-                        current_stop.sequence,
-                        minutes_late,
-                        pool.clone(),
-                    )
-                    .await?;
+                    if current_stop.real_departure.is_none() {
+                        current_stop.real_departure = Some(
+                            route.expected_start_time
+                                + chrono::Duration::minutes(minutes_late.into()),
+                        );
+                        update_stop_departure(
+                            current_stop,
+                            route.expected_start_time,
+                            &route.id,
+                            pool.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             (Delay::Late { minutes_late }, Status::Arriving(_)) => {
@@ -288,15 +278,23 @@ async fn check_delay_until_route_completion(
                     update_route_real_times(&route, &pool).await?;
                 }
 
+                let current_stop_idx =
+                    get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
+                let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
-                    update_stop_arrival(
-                        route.expected_start_time,
-                        &route.id,
-                        current_stop.sequence,
-                        minutes_late,
-                        pool.clone(),
-                    )
-                    .await?;
+                    if current_stop.real_arrival.is_none() {
+                        current_stop.real_arrival = Some(
+                            route.expected_start_time
+                                + chrono::Duration::minutes(minutes_late.into()),
+                        );
+                        update_stop_arrival(
+                            current_stop,
+                            route.expected_start_time,
+                            &route.id,
+                            pool.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             (Delay::OnTime, Status::FinishedDriving(_)) => {
@@ -306,15 +304,20 @@ async fn check_delay_until_route_completion(
                     return Ok(());
                 }
 
+                let current_stop_idx =
+                    get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
+                let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
-                    update_stop_arrival(
-                        route.expected_start_time,
-                        &route.id,
-                        current_stop.sequence,
-                        0,
-                        pool.clone(),
-                    )
-                    .await?;
+                    if current_stop.real_arrival.is_none() {
+                        current_stop.real_arrival = Some(route.expected_start_time);
+                        update_stop_arrival(
+                            current_stop,
+                            route.expected_start_time,
+                            &route.id,
+                            pool.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             (Delay::Late { minutes_late }, Status::FinishedDriving(_)) => {
@@ -326,15 +329,23 @@ async fn check_delay_until_route_completion(
                     return Ok(());
                 }
 
+                let current_stop_idx =
+                    get_current_stop_idx(&route, &stations, &status).unwrap_or(10000);
+                let current_stop = route.stops.get_mut(current_stop_idx);
                 if let Some(current_stop) = current_stop {
-                    update_stop_arrival(
-                        route.expected_start_time,
-                        &route.id,
-                        current_stop.sequence,
-                        minutes_late,
-                        pool.clone(),
-                    )
-                    .await?;
+                    if current_stop.real_arrival.is_none() {
+                        current_stop.real_arrival = Some(
+                            route.expected_start_time
+                                + chrono::Duration::minutes(minutes_late.into()),
+                        );
+                        update_stop_arrival(
+                            current_stop,
+                            route.expected_start_time,
+                            &route.id,
+                            pool.clone(),
+                        )
+                        .await?;
+                    }
                 }
             }
             _ => {
@@ -347,6 +358,44 @@ async fn check_delay_until_route_completion(
             .instrument(info_span!("Waiting 60 seconds"))
             .await;
     }
+}
+
+fn get_current_stop_idx(
+    route: &RouteDb,
+    stations: &HashMap<String, StationDb>,
+    status: &TrainStatus,
+) -> Option<usize> {
+    let mut current_stops = route
+        .stops
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| {
+            let station = match stations.get(&s.station_id) {
+                Some(s) => s,
+                None => {
+                    error!("Got unknown stop id");
+                    return None;
+                }
+            };
+
+            info!(
+                "is_delay_station_similar_to_stop_name({},{})",
+                &status.station, &station.name
+            );
+            match is_delay_station_similar_to_stop_name(&status.station, &station.name) {
+                Ok(r) => match r {
+                    true => return Some(i),
+                    false => None,
+                },
+                Err(e) => {
+                    error!("{:?}", e);
+                    return None;
+                }
+            }
+        })
+        .collect_vec();
+
+    current_stops.pop()
 }
 
 async fn get_stations(pool: Pool<Postgres>) -> Result<Vec<StationDb>, anyhow::Error> {
@@ -382,24 +431,21 @@ fn is_delay_station_similar_to_stop_name(
 }
 
 async fn update_stop_arrival(
+    stop: &StopDb,
     route_expected_start_time: DateTime<Utc>,
     route_id: &str,
-    sequence: i16,
-    delay_in_minutes: i32,
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
-    let real_arrival =
-        route_expected_start_time + chrono::Duration::minutes(delay_in_minutes.into());
     query!(
         "
     UPDATE stops
     SET real_arrival = $1
     where route_expected_start_time = $2 and route_id = $3 and sequence = $4
     ",
-        real_arrival,
+        stop.real_arrival,
         route_expected_start_time,
         route_id,
-        sequence,
+        stop.sequence,
     )
     .execute(&pool)
     .await?;
@@ -408,24 +454,21 @@ async fn update_stop_arrival(
 }
 
 async fn update_stop_departure(
+    stop: &StopDb,
     route_expected_start_time: DateTime<Utc>,
     route_id: &str,
-    sequence: i16,
-    delay_in_minutes: i32,
     pool: Pool<Postgres>,
 ) -> Result<(), anyhow::Error> {
-    let real_arrival =
-        route_expected_start_time + chrono::Duration::minutes(delay_in_minutes.into());
     query!(
         "
 UPDATE stops
 SET real_arrival = $1
 where route_expected_start_time = $2 and route_id = $3 and sequence = $4
 ",
-        real_arrival,
+        stop.real_arrival,
         route_expected_start_time,
         route_id,
-        sequence,
+        stop.sequence,
     )
     .execute(&pool)
     .await?;
