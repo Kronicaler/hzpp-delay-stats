@@ -213,7 +213,7 @@ async fn check_delay_until_route_completion(
                 if let Some(current_stop) = current_stop {
                     if current_stop.real_departure.is_none() {
                         current_stop.real_departure = Some(
-                            route.expected_start_time
+                            current_stop.expected_departure
                                 + chrono::Duration::minutes(minutes_late.into()),
                         );
                         update_stop_departure(
@@ -239,7 +239,7 @@ async fn check_delay_until_route_completion(
                 if let Some(current_stop) = current_stop {
                     if current_stop.real_arrival.is_none() {
                         current_stop.real_arrival = Some(
-                            route.expected_start_time
+                            current_stop.expected_arrival
                                 + chrono::Duration::minutes(minutes_late.into()),
                         );
                         update_stop_arrival(
@@ -261,7 +261,7 @@ async fn check_delay_until_route_completion(
                 if let Some(current_stop) = current_stop {
                     if current_stop.real_arrival.is_none() {
                         current_stop.real_arrival = Some(
-                            route.expected_start_time
+                            current_stop.expected_arrival
                                 + chrono::Duration::minutes(minutes_late.into()),
                         );
                         update_stop_arrival(
