@@ -188,7 +188,7 @@ async fn check_delay_until_route_completion(
             }
         };
 
-        let minutes_late = get_minutes_late_from_status(&status);
+        let minutes_late = status.get_minutes_late();
 
         if minutes_late.is_none() {
             continue;
@@ -377,15 +377,6 @@ async fn update_stop_arrival(
     Ok(())
 }
 
-fn get_minutes_late_from_status(status: &TrainStatus) -> Option<i32> {
-    match status.delay {
-        Delay::NoData => None,
-        Delay::WaitingToDepart => None,
-        Delay::OnTime => Some(0),
-        Delay::Late { minutes_late } => Some(minutes_late),
-    }
-}
-
 #[tracing::instrument(err)]
 async fn update_stop_departure(
     stop: &StopDb,
@@ -556,6 +547,17 @@ enum Status {
     DepartingFromStation(DateTime<Utc>),
     Arriving(DateTime<Utc>),
     FinishedDriving(DateTime<Utc>),
+}
+
+impl TrainStatus{
+    pub fn get_minutes_late(&self) -> Option<i32> {
+        match self.delay {
+            Delay::NoData => None,
+            Delay::WaitingToDepart => None,
+            Delay::OnTime => Some(0),
+            Delay::Late { minutes_late } => Some(minutes_late),
+        }
+    }
 }
 
 #[tracing::instrument(err)]

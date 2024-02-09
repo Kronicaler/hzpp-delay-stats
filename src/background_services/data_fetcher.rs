@@ -40,7 +40,7 @@ pub async fn get_todays_data(
         })
         .collect_vec();
 
-    let saved_routes = save_data(&routes, stations, pool.clone()).await?;
+    let saved_routes = save_data(routes, stations, pool.clone()).await?;
 
     delay_checker_sender.send(saved_routes).await?;
 
@@ -51,7 +51,7 @@ pub async fn get_todays_data(
 /// Does not save real times.
 #[tracing::instrument(err, skip(routes))]
 async fn save_data(
-    routes: &Vec<RouteDb>,
+    routes: Vec<RouteDb>,
     stations: Vec<StationDb>,
     pool: sqlx::Pool<Postgres>,
 ) -> Result<Vec<RouteDb>, anyhow::Error> {
@@ -97,7 +97,7 @@ async fn save_data(
         )",
     );
 
-    query_builder.push_values(routes, |mut b, route| {
+    query_builder.push_values(&routes, |mut b, route| {
         b.push_bind(&route.id)
             .push_bind(route.route_number)
             .push_bind(&route.source)
@@ -124,7 +124,7 @@ async fn save_data(
         .instrument(info_span!("Inserting routes"))
         .await?;
 
-    let all_stops = routes.iter().flat_map(|r| r.stops.clone()).collect_vec();
+    let all_stops = routes.iter().flat_map(|r| &r.stops).collect_vec();
     let stops_chunks = all_stops.chunks(1024).collect_vec();
 
     for stops in stops_chunks {
@@ -167,9 +167,8 @@ async fn save_data(
     let saved_route_nums: HashSet<i32> = HashSet::from_iter(saved_route_nums);
 
     let saved_routes = routes
-        .iter()
+        .into_iter()
         .filter(|r| saved_route_nums.contains(&r.route_number))
-        .cloned()
         .collect_vec();
 
     Ok(saved_routes)

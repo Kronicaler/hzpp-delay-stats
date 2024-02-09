@@ -10,7 +10,7 @@ use super::hzpp_api_model::{HzppRoute, HzppStation, HzppStop};
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-#[derive(Clone, FromRow)]
+#[derive(FromRow)]
 pub struct RouteDb {
     pub id: String,
     pub route_number: i32,
@@ -202,7 +202,7 @@ impl TryFrom<i16> for WheelchairAccessible {
     }
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Debug, FromRow)]
 pub struct StopDb {
     pub station_id: String,
     pub route_id: String,
@@ -249,7 +249,7 @@ impl StopDb {
     }
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Debug, FromRow)]
 pub struct StationDb {
     pub id: String,
     pub code: i32,
