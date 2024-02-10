@@ -549,7 +549,7 @@ enum Status {
     FinishedDriving(DateTime<Utc>),
 }
 
-impl TrainStatus{
+impl TrainStatus {
     pub fn get_minutes_late(&self) -> Option<i32> {
         match self.delay {
             Delay::NoData => None,

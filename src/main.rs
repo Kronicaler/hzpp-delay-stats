@@ -108,12 +108,12 @@ async fn main() -> Result<()> {
     select! {
     res = route_fetcher =>{
         match res{
-            Ok(_) => todo!(),
+            Ok(_) => unreachable!(),
             Err(err) => error!("{:?}",err),
         }},
     res = delay_checker =>{
         match res{
-            Ok(_) => todo!(),
+            Ok(_) => unreachable!(),
             Err(err) => error!("{:?}",err),
         }},
     }
