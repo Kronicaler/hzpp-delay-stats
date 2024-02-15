@@ -1,5 +1,6 @@
 #![feature(error_generic_member_access)]
-#![feature(try_blocks)]
+#![feature(try_blocks, yeet_expr, try_trait_v2)]
+#![feature(async_closure)]
 
 use anyhow::Result;
 use background_services::data_fetcher::get_todays_data;
