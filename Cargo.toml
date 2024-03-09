@@ -11,15 +11,15 @@ debug = "line-tables-only"
 
 [dependencies]
 # tracing and opentelemetry
-opentelemetry = "0.21"
-opentelemetry_sdk = { version = "0.21.2", features = ["rt-tokio"] }
+opentelemetry = "0.22"
+opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
 tracing = "0.1"
-tracing-opentelemetry = { version = "0.22" }
+tracing-opentelemetry = { version = "0.23" }
 tracing-subscriber = { version = "0.3", features = [
     "tracing-log",
     "env-filter",
 ] }
-opentelemetry-otlp = "0.14"
+opentelemetry-otlp = "0.15"
 tracing-appender = "0.2.3"
 
 serde = { version = "1.0", features = ["derive"] }
@@ -38,7 +38,7 @@ sqlx = { version = "0.7.3", features = [
     "runtime-tokio-rustls",
 ] }
 postgres = "0.19.7"
-rustls = "0.22.1"
+rustls = "0.23"
 chrono-tz = "0.8.4"
 derivative = "2.2.0"
 futures = "0.3.30"

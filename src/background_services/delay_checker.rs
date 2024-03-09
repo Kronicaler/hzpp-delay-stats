@@ -1,6 +1,10 @@
 //! Responsible for checking the delays of routes gotten from the route_fetcher
 
-use std::{collections::HashMap, hash::RandomState, time::Duration, vec};
+use std::{
+    collections::{hash_map::RandomState, HashMap},
+    time::Duration,
+    vec,
+};
 
 use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
@@ -156,7 +160,7 @@ async fn check_delay_until_route_completion(
             .instrument(info_span!("Waiting 60 seconds"))
             .await;
 
-        if Utc::now() > route.expected_end_time + chrono::Duration::hours(12) {
+        if Utc::now() > route.expected_end_time + chrono::Duration::try_hours(12).unwrap() {
             info!(train_timeout = true);
 
             if route.real_start_time.is_none() {
@@ -203,7 +207,8 @@ async fn check_delay_until_route_completion(
                 if route.real_start_time.is_none() {
                     train_has_started = true;
                     route.real_start_time = Some(
-                        route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
+                        route.expected_start_time
+                            + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
                     );
                     update_route_real_times(&route, &pool).await?;
                 }
@@ -215,7 +220,8 @@ async fn check_delay_until_route_completion(
                 if route.real_start_time.is_none() {
                     train_has_started = true;
                     route.real_start_time = Some(
-                        route.expected_start_time + chrono::Duration::minutes(minutes_late.into()),
+                        route.expected_start_time
+                            + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
                     );
                     update_route_real_times(&route, &pool).await?;
                 }
@@ -224,7 +230,7 @@ async fn check_delay_until_route_completion(
                     .await?;
             }
             Status::FinishedDriving(datetime) => {
-                if datetime < Utc::now() - chrono::Duration::hours(12) {
+                if datetime < Utc::now() - chrono::Duration::try_hours(12).unwrap() {
                     continue;
                 }
 
@@ -233,7 +239,8 @@ async fn check_delay_until_route_completion(
 
                 if train_has_started {
                     route.real_end_time = Some(
-                        route.expected_end_time + chrono::Duration::minutes(minutes_late.into()),
+                        route.expected_end_time
+                            + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
                     );
                     update_route_real_times(&route, &pool).await?;
                     return Ok(());
@@ -255,7 +262,8 @@ async fn update_current_stop_arrival(
     if let Some(current_stop) = current_stop {
         if current_stop.real_arrival.is_none() {
             current_stop.real_arrival = Some(
-                current_stop.expected_arrival + chrono::Duration::minutes(minutes_late.into()),
+                current_stop.expected_arrival
+                    + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
             );
             update_stop_arrival(
                 current_stop,
@@ -282,7 +290,8 @@ async fn update_current_stop_departure(
     if let Some(current_stop) = current_stop {
         if current_stop.real_departure.is_none() {
             current_stop.real_departure = Some(
-                current_stop.expected_departure + chrono::Duration::minutes(minutes_late.into()),
+                current_stop.expected_departure
+                    + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
             );
             update_stop_departure(
                 current_stop,
