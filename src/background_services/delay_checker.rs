@@ -250,6 +250,11 @@ async fn check_delay_until_route_completion(
     }
 }
 
+/// How many minutes the `minutes late` and `status time` are allowed to differ from one another.
+/// 
+/// If the data is correct these two should always be the same. but we don't know if the data is correct...
+const ALLOWED_TIME_DIFF: i64 = 10;
+
 async fn update_current_stop_arrival(
     route: &mut RouteDb,
     stations: &HashMap<String, StationDb>,
@@ -259,21 +264,32 @@ async fn update_current_stop_arrival(
 ) -> Result<(), anyhow::Error> {
     let current_stop = get_current_stop(&mut route.stops, &stations, &status);
     info!(current_stop = ?current_stop);
-    if let Some(current_stop) = current_stop {
-        if current_stop.real_arrival.is_none() {
-            current_stop.real_arrival = Some(
-                current_stop.expected_arrival
-                    + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
-            );
-            update_stop_arrival(
-                current_stop,
-                route.expected_start_time,
-                &route.id,
-                pool.clone(),
-            )
-            .await?;
-        }
+    let Some(current_stop) = current_stop else {
+        return Ok(());
+    };
+    if current_stop.real_arrival.is_some() {
+        return Ok(()); // Stop arrival is already written
     }
+
+    current_stop.real_arrival = Some(
+        current_stop.expected_arrival + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
+    );
+
+    if (current_stop.real_departure.unwrap() - status.status.get_time()).abs()
+        > chrono::Duration::try_minutes(ALLOWED_TIME_DIFF).unwrap()
+    {
+        error!("times don't add up");
+        error!(?status, minutes_late, ?current_stop);
+        bail!("times don't add up");
+    }
+
+    update_stop_arrival(
+        current_stop,
+        route.expected_start_time,
+        &route.id,
+        pool.clone(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -287,21 +303,33 @@ async fn update_current_stop_departure(
 ) -> Result<(), anyhow::Error> {
     let current_stop = get_current_stop(&mut route.stops, &stations, &status);
     info!(current_stop = ?current_stop);
-    if let Some(current_stop) = current_stop {
-        if current_stop.real_departure.is_none() {
-            current_stop.real_departure = Some(
-                current_stop.expected_departure
-                    + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
-            );
-            update_stop_departure(
-                current_stop,
-                route.expected_start_time,
-                &route.id,
-                pool.clone(),
-            )
-            .await?;
-        }
+    let Some(current_stop) = current_stop else {
+        return Ok(());
+    };
+    if current_stop.real_departure.is_some() {
+        return Ok(()); // stop departure was already written
     }
+
+    current_stop.real_departure = Some(
+        current_stop.expected_departure
+            + chrono::Duration::try_minutes(minutes_late.into()).unwrap(),
+    );
+
+    if (current_stop.real_departure.unwrap() - status.status.get_time()).abs()
+        > chrono::Duration::try_minutes(ALLOWED_TIME_DIFF).unwrap()
+    {
+        error!("times don't add up");
+        error!(?status, minutes_late, ?current_stop);
+        bail!("times don't add up");
+    }
+
+    update_stop_departure(
+        current_stop,
+        route.expected_start_time,
+        &route.id,
+        pool.clone(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -567,6 +595,17 @@ enum Status {
     DepartingFromStation(DateTime<Utc>),
     Arriving(DateTime<Utc>),
     FinishedDriving(DateTime<Utc>),
+}
+
+impl Status {
+    pub fn get_time(self) -> DateTime<Utc> {
+        match self {
+            Status::Formed(dt) => dt,
+            Status::DepartingFromStation(dt) => dt,
+            Status::Arriving(dt) => dt,
+            Status::FinishedDriving(dt) => dt,
+        }
+    }
 }
 
 impl TrainStatus {

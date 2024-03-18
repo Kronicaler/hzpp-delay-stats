@@ -5,6 +5,7 @@
 use anyhow::Result;
 use background_services::data_fetcher::get_todays_data;
 use background_services::delay_checker::check_delays;
+use clap::{command, Parser, Subcommand};
 use dotenvy::dotenv;
 use model::db_model::RouteDb;
 use opentelemetry::trace::TracerProvider as _;
@@ -14,7 +15,9 @@ use opentelemetry_sdk::runtime::Tokio;
 use opentelemetry_sdk::trace::{Config, TracerProvider};
 use opentelemetry_sdk::Resource;
 use std::env;
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::process::Command;
 use tokio::sync::mpsc::channel;
 use tokio::time::sleep;
 use tokio::{select, spawn};
@@ -28,9 +31,34 @@ mod background_services;
 mod model;
 mod utils;
 
+#[derive(Parser, Debug)]
+#[command(version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    #[command(about="Start up the frontend in dev mode for development purposes")]
+    Front {},
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     _ = dotenv();
+
+    let cli = Cli::parse();
+    println!("{:?}", cli);
+    if cli.command.is_some() {
+        let _ = Command::new("pwsh")
+            .args(["-c ", "cd client; npm run dev -- --open"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("Failed to execute command");
+    }
+
     info!("OTLP_ENDPOINT: {}", dotenvy::var("OTLP_ENDPOINT").unwrap());
     let provider = TracerProvider::builder()
         .with_batch_exporter(
@@ -117,7 +145,44 @@ async fn main() -> Result<()> {
             Ok(_) => unreachable!(),
             Err(err) => error!("{:?}",err),
         }},
+    _ = wait_for_signal() =>{info!("Received shutdown signal")}
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+async fn wait_for_signal_impl() {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut signal_terminate = signal(SignalKind::terminate()).unwrap();
+    let mut signal_interrupt = signal(SignalKind::interrupt()).unwrap();
+
+    tokio::select! {
+        _ = signal_terminate.recv() => tracing::debug!("Received SIGTERM."),
+        _ = signal_interrupt.recv() => tracing::debug!("Received SIGINT."),
+    };
+}
+
+#[cfg(windows)]
+async fn wait_for_signal_impl() {
+    use tokio::signal::windows;
+
+    let mut signal_c = windows::ctrl_c().unwrap();
+    let mut signal_break = windows::ctrl_break().unwrap();
+    let mut signal_close = windows::ctrl_close().unwrap();
+    let mut signal_shutdown = windows::ctrl_shutdown().unwrap();
+
+    tokio::select! {
+        _ = signal_c.recv() => tracing::debug!("Received CTRL_C."),
+        _ = signal_break.recv() => tracing::debug!("Received CTRL_BREAK."),
+        _ = signal_close.recv() => tracing::debug!("Received CTRL_CLOSE."),
+        _ = signal_shutdown.recv() => tracing::debug!("Received CTRL_SHUTDOWN."),
+    };
+}
+
+/// Registers signal handlers and waits for a signal that
+/// indicates a shutdown request.
+async fn wait_for_signal() {
+    wait_for_signal_impl().await
 }
