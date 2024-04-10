@@ -40,7 +40,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    #[command(about="Start up the frontend in dev mode for development purposes")]
+    #[command(about = "Start up the frontend in dev mode for development purposes")]
     Front {},
 }
 

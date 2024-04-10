@@ -251,7 +251,7 @@ async fn check_delay_until_route_completion(
 }
 
 /// How many minutes the `minutes late` and `status time` are allowed to differ from one another.
-/// 
+///
 /// If the data is correct these two should always be the same. but we don't know if the data is correct...
 const ALLOWED_TIME_DIFF: i64 = 10;
 
