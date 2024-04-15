@@ -5,8 +5,9 @@ use std::str::FromStr;
 pub struct HzppRoute {
     pub route_id: String,
     pub route_number: i32,
-    /// Usual starting station. Can be incorrect due to exceptions like construction.
+    /// Usual starting station. Can be incorrect due to exceptions like construction. Shouldn't be used.
     pub route_src: String,
+    /// Usual ending station. Can be incorrect due to exceptions like construction. Shouldn't be used.
     pub route_desc: String,
     /// Is completely incorrect
     #[serde(deserialize_with = "timestamp_from_hzpp_time")]
@@ -39,8 +40,14 @@ pub struct Calendar {
 pub struct HzppStop {
     pub stop_id: String,
     pub stop_name: String,
+    /// (Hour, Minute)
+    /// 
+    /// Warning: the hour can be larger than 23
     #[serde(deserialize_with = "timestamp_from_hzpp_time")]
     pub arrival_time: (u8, u8),
+    /// (Hour, Minute)
+    /// 
+    /// Warning: the hour can be larger than 23
     #[serde(deserialize_with = "timestamp_from_hzpp_time")]
     pub departure_time: (u8, u8),
     pub latitude: f64,
@@ -57,11 +64,11 @@ pub struct HzppStation {
     pub stop_lng: f64,
 }
 
+// These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
 fn timestamp_from_hzpp_time<'de, D>(deserializer: D) -> Result<(u8, u8), D::Error>
 where
     D: Deserializer<'de>,
 {
-    // These shenanigangs are being done cause the API can return a very dumb time like "25:49:00"
     let s: String = Deserialize::deserialize(deserializer)?;
 
     let res: anyhow::Result<(u8, u8)> = try {
