@@ -131,6 +131,14 @@ async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyho
         return Ok(());
     }
 
+    if secs_until_start <= 0 {
+        info!("Got ongoing route, starting monitoring");
+
+        check_delay_until_route_completion(route, pool).await?;
+
+        return Ok(());
+    }
+
     info!("Waiting {} seconds for route to start", secs_until_start);
     sleep(Duration::from_secs(
         secs_until_start.try_into().unwrap_or(0),

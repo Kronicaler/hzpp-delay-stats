@@ -39,3 +39,5 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs/
+    ports:
+      - 3300:3300

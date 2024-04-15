@@ -10,4 +10,4 @@
 ### Interesting data to show
 
 - total delay of all trains (at station/region/train line/country)
-- map of train lines and stations showing relevant data like marking stations in red that have a lot of delays
+- map of train lines and stations showing relevant data (marking stations in red that have a lot of delays or railway works)

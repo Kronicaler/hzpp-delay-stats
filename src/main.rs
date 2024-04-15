@@ -3,6 +3,8 @@
 #![feature(async_closure)]
 
 use anyhow::Result;
+use axum::routing::get;
+use axum::Router;
 use background_services::data_fetcher::get_todays_data;
 use background_services::delay_checker::check_delays;
 use clap::{command, Parser, Subcommand};
@@ -93,10 +95,12 @@ async fn main() -> Result<()> {
 
     let appender = tracing_appender::rolling::daily("./logs", "hzpp_delay_stats.log");
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(appender);
+    let (non_blocking_stdout, _guard) = tracing_appender::non_blocking(std::io::stdout());
 
     // A layer that logs events to rolling files.
     let file_log = tracing_subscriber::fmt::layer()
         .with_writer(non_blocking_appender)
+        .with_writer(non_blocking_stdout)
         .with_ansi(false)
         .pretty();
 
@@ -134,21 +138,38 @@ async fn main() -> Result<()> {
         }
     });
 
+    let app = Router::new().route("/", get(root));
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3300").await.unwrap();
+    let web_server = tokio::spawn(async { axum::serve(listener, app).await.unwrap() });
+
     select! {
     res = route_fetcher =>{
         match res{
             Ok(_) => unreachable!(),
             Err(err) => error!("{:?}",err),
         }},
+
     res = delay_checker =>{
         match res{
             Ok(_) => unreachable!(),
             Err(err) => error!("{:?}",err),
         }},
-    _ = wait_for_signal() =>{info!("Received shutdown signal")}
+
+    _ = wait_for_signal() =>{info!("Received shutdown signal")},
+
+    res = web_server=> {
+        match res{
+            Ok(_) => unreachable!(),
+            Err(err) => error!("{:?}",err),
+        }}
     }
 
     Ok(())
+}
+
+async fn root() -> &'static str {
+    "Hello, World!"
 }
 
 #[cfg(unix)]
