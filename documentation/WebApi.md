@@ -31,7 +31,7 @@ to: DateTime?
 ```
 start_station: string
 end_station: string
-around_time: DateTime
+depart_time: DateTime // depart time of the start_station
 ```
 
 
