@@ -15,24 +15,35 @@
 ### Endpoints
 
 /api/route/status
+```
 route_number: i32
+```
 
 /api/route/delay
+```
 route_number: i32?
 station_id: string?
 from: DateTime?
 to: DateTime?
+```
 
 /api/routes
+```
 start_station: string
 end_station: string
 around_time: DateTime
+```
+
 
 /api/user/register
+```
 guid: string
+```
 
 /api/route/favorite
+```
 user_guid: string
 route_number: i32
 alert_on_railway_works: bool
 alert_on_delay: i32?
+```
