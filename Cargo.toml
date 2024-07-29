@@ -27,8 +27,8 @@ serde_json = "1.0"
 thiserror = "1.0"
 anyhow = { version = "1.0", features = ["backtrace"] }
 regex = "1.0"
-itertools = "0.12"
-reqwest = "0.11"
+itertools = "0.13"
+reqwest = "0.12"
 tokio = { version = "1.36", features = [
     "macros",
     "rt-multi-thread",
@@ -37,14 +37,14 @@ tokio = { version = "1.36", features = [
 ] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15.7"
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
     "chrono",
     "postgres",
     "runtime-tokio-rustls",
 ] }
 postgres = "0.19.7"
 rustls = "0.23"
-chrono-tz = "0.8"
+chrono-tz = "0.9"
 derivative = "2.2.0"
 futures = "0.3.30"
 clap = { version = "4.5.3", features = ["derive"] }

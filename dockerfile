@@ -1,4 +1,4 @@
-FROM rust:slim-bookworm AS builder
+FROM rust:slim-bookworm AS builder-1
 WORKDIR /app
 
 RUN apt-get update && apt-get install --no-install-recommends -y cmake pkg-config openssl libssl-dev build-essential wget && rm -rf /var/lib/apt/lists/*;
@@ -21,6 +21,11 @@ RUN ARCH= && alpineArch="$(dpkg --print-architecture)" \
     && chmod +x /usr/local/bin/sccache
 
 ENV RUSTC_WRAPPER=/usr/local/bin/sccache
+
+RUN rustup default nightly
+RUN rustup update
+
+FROM builder-1 as builder-2
 
 # Pre-compile dependencies
 WORKDIR /build
@@ -49,6 +54,6 @@ FROM debian:bookworm-slim as release
 RUN apt-get update && apt-get install --no-install-recommends -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*;
 
 WORKDIR /app
-COPY --link --from=builder /build/target/release/hzpp_delay_stats /app/hzpp_delay_stats
+COPY --link --from=builder-2 /build/target/release/hzpp_delay_stats /app/hzpp_delay_stats
 
 ENTRYPOINT ["/app/hzpp_delay_stats"]
