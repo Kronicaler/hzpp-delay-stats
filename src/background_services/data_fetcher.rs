@@ -20,7 +20,7 @@ pub async fn get_todays_data(
     pool: &sqlx::Pool<Postgres>,
     delay_checker_sender: Sender<Vec<RouteDb>>,
 ) -> Result<(), anyhow::Error> {
-    let mut date = chrono::Local::now().with_timezone(&Zagreb);
+    let today = chrono::Local::now().with_timezone(&Zagreb);
 
     let stations = fetch_stations()
         .await?
@@ -28,12 +28,12 @@ pub async fn get_todays_data(
         .map(|s| StationDb::from(s))
         .collect_vec();
 
-    let mut routes = fetch_routes(date).await?;
+    let mut routes = fetch_routes(today).await?;
 
     if routes.len() == 0 {
         info!("Due to getting no routes for today falling back to last date routes were available");
 
-        date = get_last_route(pool)
+        let date = get_last_route(pool)
             .await?
             .expected_start_time
             .with_timezone(&Zagreb);
@@ -42,7 +42,7 @@ pub async fn get_todays_data(
 
     let db_routes = routes
         .into_iter()
-        .map(|r| RouteDb::try_from_hzpp_route(r, date))
+        .map(|r| RouteDb::try_from_hzpp_route(r, today))
         .filter_map(|r| match r {
             Err(e) => {
                 error!("Error turning HzppRoute to RouteDb {e}");
