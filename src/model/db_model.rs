@@ -1,15 +1,12 @@
 use anyhow::{anyhow, bail, Context, Error};
 use chrono::{DateTime, Days, Timelike, Utc};
 use chrono_tz::Tz;
-use derivative::Derivative;
 use itertools::Itertools;
 use sqlx::prelude::FromRow;
 use tracing::error;
 
 use super::hzpp_api_model::{HzppRoute, HzppStation, HzppStop};
 
-#[derive(Derivative)]
-#[derivative(Debug)]
 #[derive(FromRow)]
 pub struct RouteDb {
     pub id: String,
@@ -28,9 +25,27 @@ pub struct RouteDb {
     pub real_end_time: Option<DateTime<Utc>>,
     /// The arrival time of the last stop
     pub expected_end_time: DateTime<Utc>,
-    #[derivative(Debug = "ignore")]
     #[sqlx(skip)]
     pub stops: Vec<StopDb>,
+}
+
+impl std::fmt::Debug for RouteDb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RouteDb")
+            .field("id", &self.id)
+            .field("route_number", &self.route_number)
+            .field("source", &self.source)
+            .field("destination", &self.destination)
+            .field("bikes_allowed", &self.bikes_allowed)
+            .field("wheelchair_accessible", &self.wheelchair_accessible)
+            .field("route_type", &self.route_type)
+            .field("real_start_time", &self.real_start_time)
+            .field("expected_start_time", &self.expected_start_time)
+            .field("real_end_time", &self.real_end_time)
+            .field("expected_end_time", &self.expected_end_time)
+            //.field("stops", &self.stops)
+            .finish()
+    }
 }
 
 impl RouteDb {

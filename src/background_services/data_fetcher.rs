@@ -3,23 +3,24 @@ use crate::model::{
     db_model::{RouteDb, StationDb},
     hzpp_api_model::{HzppRoute, HzppStation},
 };
-use anyhow::Context;
+use anyhow::{Context, Error};
 use chrono::DateTime;
 use chrono_tz::{Europe::Zagreb, Tz};
 use itertools::Itertools;
-use sqlx::{postgres::PgRow, Postgres, QueryBuilder, Row};
+use sqlx::{postgres::PgRow, query_as, Postgres, QueryBuilder, Row};
 use std::{backtrace::Backtrace, collections::HashSet};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, info_span, Instrument};
 
 /// Gets todays routes and saves them to the DB.
 /// If a duplicate route is already in the DB then it's discarded.
+/// After saving to DB sends them to the delay checker.
 #[tracing::instrument(err)]
 pub async fn get_todays_data(
     pool: &sqlx::Pool<Postgres>,
     delay_checker_sender: Sender<Vec<RouteDb>>,
 ) -> Result<(), anyhow::Error> {
-    let today = chrono::Local::now().with_timezone(&Zagreb);
+    let mut date = chrono::Local::now().with_timezone(&Zagreb);
 
     let stations = fetch_stations()
         .await?
@@ -27,10 +28,21 @@ pub async fn get_todays_data(
         .map(|s| StationDb::from(s))
         .collect_vec();
 
-    let routes = fetch_routes(today)
-        .await?
+    let mut routes = fetch_routes(date).await?;
+
+    if routes.len() == 0 {
+        info!("Due to getting no routes for today falling back to last date routes were available");
+
+        date = get_last_route(pool)
+            .await?
+            .expected_start_time
+            .with_timezone(&Zagreb);
+        routes = fetch_routes(date).await?;
+    }
+
+    let db_routes = routes
         .into_iter()
-        .map(|r| RouteDb::try_from_hzpp_route(r, today))
+        .map(|r| RouteDb::try_from_hzpp_route(r, date))
         .filter_map(|r| match r {
             Err(e) => {
                 error!("Error turning HzppRoute to RouteDb {e}");
@@ -40,11 +52,20 @@ pub async fn get_todays_data(
         })
         .collect_vec();
 
-    let saved_routes = save_data(routes, stations, pool.clone()).await?;
+    let saved_routes = save_data(db_routes, stations, pool.clone()).await?;
 
     delay_checker_sender.send(saved_routes).await?;
 
     Ok(())
+}
+
+async fn get_last_route(pool: &sqlx::Pool<Postgres>) -> Result<RouteDb, Error> {
+    let route =
+        query_as("select * from routes ORDER BY expected_start_time DESC")
+            .fetch_one(pool)
+            .await?;
+
+    return Ok(route);
 }
 
 /// Returns the saved routes. If a route is already present in the DB it isn't saved.

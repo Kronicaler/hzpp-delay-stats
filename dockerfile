@@ -1,7 +1,7 @@
 FROM rust:slim-bookworm AS builder-1
 WORKDIR /app
 
-RUN apt-get update && apt-get install --no-install-recommends -y cmake pkg-config openssl libssl-dev build-essential wget && rm -rf /var/lib/apt/lists/*;
+RUN apt-get update && apt-get install -y cmake pkg-config openssl libssl-dev build-essential wget && rm -rf /var/lib/apt/lists/*;
 
 ENV SCCACHE_VERSION=0.5.0
 
@@ -25,7 +25,7 @@ ENV RUSTC_WRAPPER=/usr/local/bin/sccache
 RUN rustup default nightly
 RUN rustup update
 
-FROM builder-1 as builder-2
+FROM builder-1 AS builder-2
 
 # Pre-compile dependencies
 WORKDIR /build
@@ -49,7 +49,7 @@ ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/root/.cache touch src/main.rs && \
     cargo build --release
 
-FROM debian:bookworm-slim as release
+FROM debian:bookworm-slim AS release
 
 RUN apt-get update && apt-get install --no-install-recommends -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*;
 

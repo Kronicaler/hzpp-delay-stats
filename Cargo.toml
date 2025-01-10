@@ -45,7 +45,6 @@ sqlx = { version = "0.8", features = [
 postgres = "0.19.7"
 rustls = "0.23"
 chrono-tz = "0.9"
-derivative = "2.2.0"
 futures = "0.3.30"
 clap = { version = "4.5.3", features = ["derive"] }
 axum = "0.7.5"
