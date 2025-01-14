@@ -3,11 +3,11 @@ use crate::model::{
     db_model::{RouteDb, StationDb},
     hzpp_api_model::{HzppRoute, HzppStation},
 };
-use anyhow::{Context, Error};
-use chrono::DateTime;
+use anyhow::Context;
+use chrono::{DateTime, Days};
 use chrono_tz::{Europe::Zagreb, Tz};
 use itertools::Itertools;
-use sqlx::{postgres::PgRow, query_as, Postgres, QueryBuilder, Row};
+use sqlx::{postgres::PgRow, Postgres, QueryBuilder, Row};
 use std::{backtrace::Backtrace, collections::HashSet};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, info_span, Instrument};
@@ -32,12 +32,17 @@ pub async fn get_todays_data(
 
     if routes.len() == 0 {
         info!("Due to getting no routes for today falling back to last date routes were available");
+        let mut date = today
+            .checked_sub_days(Days::new(7))
+            .context("invalid day subtraction")?;
 
-        let date = get_last_route(pool)
-            .await?
-            .expected_start_time
-            .with_timezone(&Zagreb);
-        routes = fetch_routes(date).await?;
+        while routes.len() == 0 {
+            info!("fetching routes for {}", date.date_naive());
+            routes = fetch_routes(date).await?;
+            date = date
+                .checked_sub_days(Days::new(7))
+                .context("invalid day subtraction")?;
+        }
     }
 
     let db_routes = routes
@@ -57,15 +62,6 @@ pub async fn get_todays_data(
     delay_checker_sender.send(saved_routes).await?;
 
     Ok(())
-}
-
-async fn get_last_route(pool: &sqlx::Pool<Postgres>) -> Result<RouteDb, Error> {
-    let route =
-        query_as("select * from routes ORDER BY expected_start_time DESC")
-            .fetch_one(pool)
-            .await?;
-
-    return Ok(route);
 }
 
 /// Returns the saved routes. If a route is already present in the DB it isn't saved.
