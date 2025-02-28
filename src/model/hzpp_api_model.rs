@@ -41,12 +41,12 @@ pub struct HzppStop {
     pub stop_id: String,
     pub stop_name: String,
     /// (Hour, Minute)
-    /// 
+    ///
     /// Warning: the hour can be larger than 23
     #[serde(deserialize_with = "timestamp_from_hzpp_time")]
     pub arrival_time: (u8, u8),
     /// (Hour, Minute)
-    /// 
+    ///
     /// Warning: the hour can be larger than 23
     #[serde(deserialize_with = "timestamp_from_hzpp_time")]
     pub departure_time: (u8, u8),

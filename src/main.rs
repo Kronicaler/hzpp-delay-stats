@@ -1,6 +1,4 @@
-#![feature(error_generic_member_access)]
-#![feature(try_blocks, yeet_expr, try_trait_v2)]
-#![feature(async_closure)]
+#![feature(try_blocks)]
 
 use anyhow::Result;
 use axum::routing::get;
@@ -32,6 +30,7 @@ use tracing_subscriber::{EnvFilter, Registry};
 mod background_services;
 mod model;
 mod utils;
+mod dal;
 
 #[derive(Parser, Debug)]
 #[command(version)]

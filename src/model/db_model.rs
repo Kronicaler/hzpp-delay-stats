@@ -234,7 +234,7 @@ impl StopDb {
         hzpp_stop: HzppStop,
         hzpp_route: &HzppRoute,
         date: &DateTime<Tz>,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Self, Error> {
         let (expected_arrival, expected_departure) =
             convert_hzpp_time_to_utc(&date, hzpp_stop.arrival_time, hzpp_stop.departure_time)?;
         let (route_expected_start_time, _) = convert_hzpp_time_to_utc(

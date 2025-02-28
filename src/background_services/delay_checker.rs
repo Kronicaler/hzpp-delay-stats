@@ -6,16 +6,20 @@ use std::{
     vec,
 };
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail, Context, Error};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use chrono_tz::Europe::Zagreb;
 use itertools::Itertools;
 use reqwest::{header::HeaderValue, Client, Method, Url};
-use sqlx::{query, query_as, Pool, Postgres};
-use tokio::{spawn, sync::mpsc::Receiver, task::JoinSet, time::sleep};
+use sqlx::{Pool, Postgres};
+use tokio::{spawn, sync::mpsc::Receiver, time::sleep};
 use tracing::{error, info, info_span, Instrument};
 
 use crate::{
+    dal::{
+        get_stations, get_unfinished_routes, update_route_real_times, update_stop_real_arrival,
+        update_stop_real_departure,
+    },
     model::db_model::{RouteDb, StationDb, StopDb},
     utils::str_between_str,
 };
@@ -24,7 +28,7 @@ use crate::{
 pub async fn check_delays(
     delay_checker_receiver: &mut Receiver<Vec<RouteDb>>,
     pool: &Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Error> {
     let mut buffer: Vec<Vec<RouteDb>> = vec![];
 
     let pool1 = pool.clone();
@@ -67,57 +71,7 @@ async fn spawn_route_delay_tasks(routes: Vec<RouteDb>, pool: &Pool<Postgres>) {
     }
 }
 
-#[tracing::instrument(err, skip(pool))]
-async fn get_unfinished_routes(pool: &Pool<Postgres>) -> Result<Vec<RouteDb>, anyhow::Error> {
-    let routes: Vec<RouteDb> = query_as(
-        "SELECT 
-        id,
-        route_number,
-        source,
-        destination,
-        bikes_allowed,
-        wheelchair_accessible,
-        route_type,
-        expected_start_time,
-        expected_end_time,
-        real_start_time,
-        real_end_time
-        from routes where real_end_time IS NULL or real_start_time IS NULL",
-    )
-    .fetch_all(pool)
-    .await?;
-
-    let mut set = JoinSet::new();
-
-    for mut route in routes.into_iter() {
-        let pool = pool.clone();
-        set.spawn(async move {
-            let stops: Vec<StopDb> = query_as!(
-                StopDb,
-                "SELECT * from stops where route_id = $1 and route_expected_start_time = $2",
-                route.id.clone(),
-                route.expected_start_time
-            )
-            .fetch_all(&pool)
-            .await?;
-
-            route.stops = stops;
-
-            Ok::<RouteDb, anyhow::Error>(route)
-        });
-    }
-
-    let mut routes = vec![];
-
-    while let Some(res) = set.join_next().await {
-        let route = res??;
-        routes.push(route);
-    }
-
-    Ok(routes)
-}
-
-async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyhow::Error> {
+async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), Error> {
     let secs_until_start = route.expected_start_time.timestamp() - Utc::now().timestamp();
     let secs_until_end = route.expected_end_time.timestamp() - Utc::now().timestamp();
 
@@ -154,7 +108,7 @@ async fn monitor_route(route: RouteDb, pool: Pool<Postgres>) -> Result<(), anyho
 async fn check_delay_until_route_completion(
     mut route: RouteDb,
     pool: Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Error> {
     let mut train_has_started = route.real_start_time.is_some();
     let stations: HashMap<String, StationDb, RandomState> = HashMap::from_iter(
         get_stations(pool.clone())
@@ -269,7 +223,7 @@ async fn update_current_stop_arrival(
     status: &TrainStatus,
     minutes_late: i32,
     pool: &Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Error> {
     let current_stop = get_current_stop(&mut route.stops, &stations, &status);
     info!(current_stop = ?current_stop);
     let Some(current_stop) = current_stop else {
@@ -291,7 +245,7 @@ async fn update_current_stop_arrival(
         bail!("times don't add up");
     }
 
-    update_stop_arrival(
+    update_stop_real_arrival(
         current_stop,
         route.expected_start_time,
         &route.id,
@@ -308,7 +262,7 @@ async fn update_current_stop_departure(
     status: &TrainStatus,
     minutes_late: i32,
     pool: &Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Error> {
     let current_stop = get_current_stop(&mut route.stops, &stations, &status);
     info!(current_stop = ?current_stop);
     let Some(current_stop) = current_stop else {
@@ -331,7 +285,7 @@ async fn update_current_stop_departure(
         bail!("times don't add up");
     }
 
-    update_stop_departure(
+    update_stop_real_departure(
         current_stop,
         route.expected_start_time,
         &route.id,
@@ -377,18 +331,10 @@ fn get_current_stop<'a>(
     current_stop
 }
 
-async fn get_stations(pool: Pool<Postgres>) -> Result<Vec<StationDb>, anyhow::Error> {
-    let res = query_as!(StationDb, "Select * from stations")
-        .fetch_all(&pool)
-        .await?;
-
-    return Ok(res);
-}
-
 fn is_delay_station_similar_to_stop_name(
     delay_station_name: &str,
     stop_name: &str,
-) -> Result<bool, anyhow::Error> {
+) -> Result<bool, Error> {
     let binding = delay_station_name.to_lowercase().replace(".", "");
     let delay_station_words = binding.trim().split(" ").collect_vec();
 
@@ -409,56 +355,8 @@ fn is_delay_station_similar_to_stop_name(
     Ok(are_all_words_similar)
 }
 
-#[tracing::instrument(err)]
-async fn update_stop_arrival(
-    stop: &StopDb,
-    route_expected_start_time: DateTime<Utc>,
-    route_id: &str,
-    pool: Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
-    query!(
-        "
-    UPDATE stops
-    SET real_arrival = $1
-    where route_expected_start_time = $2 and route_id = $3 and sequence = $4
-    ",
-        stop.real_arrival,
-        route_expected_start_time,
-        route_id,
-        stop.sequence,
-    )
-    .execute(&pool)
-    .await?;
-
-    Ok(())
-}
-
-#[tracing::instrument(err)]
-async fn update_stop_departure(
-    stop: &StopDb,
-    route_expected_start_time: DateTime<Utc>,
-    route_id: &str,
-    pool: Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
-    query!(
-        "
-UPDATE stops
-SET real_departure = $1
-where route_expected_start_time = $2 and route_id = $3 and sequence = $4
-",
-        stop.real_departure,
-        route_expected_start_time,
-        route_id,
-        stop.sequence,
-    )
-    .execute(&pool)
-    .await?;
-
-    Ok(())
-}
-
 #[tracing::instrument(ret, err)]
-async fn get_route_status(route: &RouteDb) -> Result<StatusResponse, anyhow::Error> {
+async fn get_route_status(route: &RouteDb) -> Result<StatusResponse, Error> {
     let url = format!(
         "https://traindelay.hzpp.hr/train/delay?trainId={}",
         route.route_number
@@ -489,7 +387,7 @@ async fn get_route_status(route: &RouteDb) -> Result<StatusResponse, anyhow::Err
 }
 
 #[tracing::instrument(ret, err)]
-fn parse_delay_html(html: String) -> Result<StatusResponse, anyhow::Error> {
+fn parse_delay_html(html: String) -> Result<StatusResponse, Error> {
     if html.contains("Unisys") {
         return Ok(StatusResponse::UnisysError);
     }
@@ -627,30 +525,7 @@ impl TrainStatus {
     }
 }
 
-#[tracing::instrument(err)]
-async fn update_route_real_times(
-    route: &RouteDb,
-    pool: &Pool<Postgres>,
-) -> Result<(), anyhow::Error> {
-    query!(
-        "
-    UPDATE routes
-    SET real_start_time = $1, real_end_time=$2
-    where expected_start_time = $3 and id = $4
-    ",
-        route.real_start_time,
-        route.real_end_time,
-        route.expected_start_time,
-        route.id
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
 mod tests {
-
     #[test]
     fn is_delay_station_similar_to_stop_name_test1() {
         let str1 = "SV. IVAN ŽABNO";
