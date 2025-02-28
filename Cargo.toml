@@ -1,7 +1,7 @@
 [package]
 name = "hzpp_delay_stats"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
@@ -11,23 +11,23 @@ debug = "line-tables-only"
 
 [dependencies]
 # tracing and opentelemetry
-opentelemetry = "0.22"
-opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
+opentelemetry = "0.28"
+opentelemetry_sdk = { version = "0.28", features = ["rt-tokio"] }
 tracing = "0.1"
-tracing-opentelemetry = { version = "0.23" }
+tracing-opentelemetry = "0.29"
 tracing-subscriber = { version = "0.3", features = [
     "tracing-log",
     "env-filter",
 ] }
-opentelemetry-otlp = "0.15"
+opentelemetry-otlp = { version = "0.28", features = ["trace", "grpc-tonic"] }
 tracing-appender = "0.2.3"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = { version = "1.0", features = ["backtrace"] }
 regex = "1.0"
-itertools = "0.13"
+itertools = "0.14"
 reqwest = "0.12"
 tokio = { version = "1.36", features = [
     "macros",
@@ -44,7 +44,8 @@ sqlx = { version = "0.8", features = [
 ] }
 postgres = "0.19.7"
 rustls = "0.23"
-chrono-tz = "0.9"
+chrono-tz = "0.10"
 futures = "0.3.30"
 clap = { version = "4.5.3", features = ["derive"] }
-axum = "0.7.5"
+axum = "0.8.1"
+scraper = "0.23.1"

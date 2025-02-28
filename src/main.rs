@@ -1,19 +1,17 @@
 #![feature(try_blocks)]
 
 use anyhow::Result;
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 use background_services::data_fetcher::get_todays_data;
 use background_services::delay_checker::check_delays;
-use clap::{command, Parser, Subcommand};
+use clap::{Parser, Subcommand, command};
 use dotenvy::dotenv;
 use model::db_model::RouteDb;
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::KeyValue;
-use opentelemetry_otlp::{SpanExporterBuilder, TonicExporterBuilder, WithExportConfig};
-use opentelemetry_sdk::runtime::Tokio;
-use opentelemetry_sdk::trace::{Config, TracerProvider};
+use opentelemetry::trace::TracerProvider;
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use std::env;
 use std::process::Stdio;
 use std::time::Duration;
@@ -28,9 +26,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
 
 mod background_services;
+mod dal;
 mod model;
 mod utils;
-mod dal;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -61,33 +59,27 @@ async fn main() -> Result<()> {
     }
 
     info!("OTLP_ENDPOINT: {}", dotenvy::var("OTLP_ENDPOINT").unwrap());
-    let provider = TracerProvider::builder()
+    let provider = SdkTracerProvider::builder()
         .with_batch_exporter(
-            SpanExporterBuilder::Tonic(
-                TonicExporterBuilder::default()
-                    .with_timeout(Duration::from_millis(1000))
-                    .with_endpoint(
-                        dotenvy::var("OTLP_ENDPOINT")
-                            .unwrap_or("http://localhost:4317".to_string()),
-                    )
-                    .with_protocol(opentelemetry_otlp::Protocol::Grpc),
-            )
-            .build_span_exporter()
-            .unwrap(),
-            Tokio,
+            SpanExporter::builder()
+                .with_tonic()
+                .with_timeout(Duration::from_millis(3000))
+                .with_endpoint(
+                    dotenvy::var("OTLP_ENDPOINT").unwrap_or("http://localhost:4317".to_string()),
+                )
+                .build()
+                .unwrap(),
         )
-        .with_config(
-            Config::default().with_resource(Resource::new(vec![KeyValue::new(
-                "service.name",
-                "HZPP_delay_stats",
-            )])),
+        .with_resource(
+            Resource::builder()
+                .with_service_name("HZPP_delay_stats")
+                .build(),
         )
         .build();
 
     let tracer = provider.tracer("HZPP_delay_stats");
 
-    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
+    let tracer_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
@@ -104,7 +96,7 @@ async fn main() -> Result<()> {
         .pretty();
 
     Registry::default()
-        .with(telemetry_layer)
+        .with(tracer_layer)
         .with(file_log)
         .with(env_filter)
         .init();
@@ -173,7 +165,7 @@ async fn root() -> &'static str {
 
 #[cfg(unix)]
 async fn wait_for_signal_impl() {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
 
     let mut signal_terminate = signal(SignalKind::terminate()).unwrap();
     let mut signal_interrupt = signal(SignalKind::interrupt()).unwrap();

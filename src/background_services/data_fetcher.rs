@@ -13,7 +13,7 @@ use itertools::Itertools;
 use sqlx::Postgres;
 use std::collections::HashSet;
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info, info_span, Instrument};
+use tracing::{Instrument, error, info, info_span};
 
 /// Gets todays routes and saves them to the DB.
 /// If a duplicate route is already in the DB then it's discarded.
@@ -140,4 +140,30 @@ async fn fetch_stations() -> Result<Vec<HzppStation>, Error> {
     info!("got {} stations", stations.len());
 
     Ok(stations)
+}
+
+#[cfg(test)]
+mod tests {
+    use scraper::Selector;
+
+    #[test]
+    fn test_stations_html() {
+        let html = include_str!("../../documentation/example_responses/prodaja.hzpp.hr.html");
+        let html = scraper::Html::parse_document(&html);
+
+        let row_station = html
+            .select(&Selector::parse("div .row.station").unwrap())
+            .next()
+            .unwrap();
+
+        for option_element in row_station
+            .select(&Selector::parse("select").unwrap())
+            .next()
+            .unwrap()
+            .select(&Selector::parse("option").unwrap())
+        {
+            println!("{:?},{:?}", option_element.attr("value").unwrap(), option_element.inner_html());
+            return;
+        }
+    }
 }

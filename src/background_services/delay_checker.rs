@@ -525,6 +525,7 @@ impl TrainStatus {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[test]
     fn is_delay_station_similar_to_stop_name_test1() {
