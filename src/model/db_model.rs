@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 use chrono::{DateTime, Days, Timelike, Utc};
 use chrono_tz::Tz;
 use itertools::Itertools;

@@ -1,12 +1,10 @@
-
-
 use anyhow::Error;
 use chrono::DateTime;
 use chrono::Utc;
 use itertools::Itertools;
-use sqlx::query;
 use sqlx::Pool;
 use sqlx::QueryBuilder;
+use sqlx::query;
 
 use sqlx::Postgres;
 use sqlx::Transaction;
@@ -16,7 +14,10 @@ use crate::model::db_model::StopDb;
 
 use tracing::info_span;
 
-pub async fn insert_stops( stops: Vec<&StopDb>, tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+pub async fn insert_stops(
+    stops: Vec<&StopDb>,
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<(), Error> {
     let stops_chunks = stops.chunks(1024).collect_vec();
     Ok(for stops in stops_chunks {
         let mut query_builder = QueryBuilder::new(
@@ -54,7 +55,6 @@ pub async fn insert_stops( stops: Vec<&StopDb>, tx: &mut Transaction<'_, Postgre
     })
 }
 
-
 #[tracing::instrument(err)]
 pub async fn update_stop_real_departure(
     stop: &StopDb,
@@ -78,7 +78,6 @@ where route_expected_start_time = $2 and route_id = $3 and sequence = $4
 
     Ok(())
 }
-
 
 #[tracing::instrument(err)]
 pub async fn update_stop_real_arrival(

@@ -1,19 +1,15 @@
 //! Responsible for fetching and saving routes
 use crate::{
-    dal::{insert_routes, insert_stations, insert_stops},
-    model::{
-        db_model::{RouteDb, StationDb},
-        hzpp_api_model::{HzppRoute, HzppStation},
-    },
+    dal::{api::{fetch_routes, fetch_stations}, db::{insert_routes, insert_stations, insert_stops}}, model::db_model::{RouteDb, StationDb},
 };
 use anyhow::{Context, Error};
-use chrono::{DateTime, Days};
-use chrono_tz::{Europe::Zagreb, Tz};
+use chrono::Days;
+use chrono_tz::Europe::Zagreb;
 use itertools::Itertools;
 use sqlx::Postgres;
 use std::collections::HashSet;
 use tokio::sync::mpsc::Sender;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{error, info};
 
 /// Gets todays routes and saves them to the DB.
 /// If a duplicate route is already in the DB then it's discarded.
@@ -96,51 +92,9 @@ async fn save_data(
     Ok(saved_routes)
 }
 
-#[tracing::instrument(err)]
-async fn fetch_routes(date: DateTime<Tz>) -> Result<Vec<HzppRoute>, Error> {
-    let request = format!(
-        "https://josipsalkovic.com/hzpp/planer/v3/getRoutes.php?date={}",
-        date.format("%Y%m%d")
-    );
 
-    let response = reqwest::get(&request)
-        .instrument(info_span!("Fetching routes"))
-        .await?
-        .error_for_status()?;
 
-    let routes_string = response
-        .text()
-        .instrument(info_span!("Reading body of response"))
-        .await?;
 
-    let routes: Vec<HzppRoute> = serde_json::from_str(&routes_string)?;
-
-    info!("got {} routes", routes.len());
-
-    Ok(routes)
-}
-
-#[tracing::instrument(err)]
-async fn fetch_stations() -> Result<Vec<HzppStation>, Error> {
-    let request = format!("https://josipsalkovic.com/hzpp/planer/v3/getStops.php");
-
-    let response = reqwest::get(&request)
-        .instrument(info_span!("Fetching stations"))
-        .await?
-        .error_for_status()?;
-
-    let stations_string = response
-        .text()
-        .instrument(info_span!("Reading body of response"))
-        .await?;
-
-    let stations: Vec<HzppStation> =
-        serde_json::from_str(&stations_string).context("Error parsing stations")?;
-
-    info!("got {} stations", stations.len());
-
-    Ok(stations)
-}
 
 #[cfg(test)]
 mod tests {
@@ -162,7 +116,11 @@ mod tests {
             .unwrap()
             .select(&Selector::parse("option").unwrap())
         {
-            println!("{:?},{:?}", option_element.attr("value").unwrap(), option_element.inner_html());
+            println!(
+                "{:?},{:?}",
+                option_element.attr("value").unwrap(),
+                option_element.inner_html()
+            );
             return;
         }
     }

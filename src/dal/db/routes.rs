@@ -1,10 +1,10 @@
 use anyhow::Error;
-use sqlx::{postgres::PgRow, query, query_as, Pool, Postgres, Row, Transaction};
+use sqlx::{Pool, Postgres, Row, Transaction, postgres::PgRow, query, query_as};
 use tokio::task::JoinSet;
 
-use crate::{model::db_model::StopDb, RouteDb};
+use crate::{RouteDb, model::db_model::StopDb};
 
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 
 use sqlx::QueryBuilder;
 

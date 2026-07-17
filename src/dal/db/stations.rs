@@ -1,6 +1,6 @@
 use anyhow::Error;
-use sqlx::{query_as, Pool, Postgres, QueryBuilder, Transaction};
-use tracing::{info_span, Instrument};
+use sqlx::{Pool, Postgres, QueryBuilder, Transaction, query_as};
+use tracing::{Instrument, info_span};
 
 use crate::model::db_model::StationDb;
 
