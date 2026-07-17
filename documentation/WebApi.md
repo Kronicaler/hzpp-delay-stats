@@ -14,36 +14,65 @@
 
 ### Endpoints
 
-/api/route/status
-```
-route_number: i32
+#### /api/routes/status
+
+Parameters:
+
+```Rust
+route_numbers: Vec<i32>
 ```
 
-/api/route/delay
-```
-route_number: i32?
+Returns:
+The status of the requested routes
+
+#### /api/routes/delay
+
+Parameters:
+
+```Rust
+route_numbers: Vec<i32>
 station_id: string?
 from: DateTime?
 to: DateTime?
 ```
 
-/api/routes
-```
+Returns:
+The delays of the requested routes
+
+#### /api/routes
+
+Parameters:
+
+```Rust
 start_station: string
 end_station: string
 depart_time: DateTime // depart time of the start_station
 ```
 
+Returns:
+The Routes which pass through the start station around the specified depart_time and pass through the end_station after the start_station.
 
-/api/user/register
-```
+#### /api/user/register
+
+Parameters:
+
+```Rust
 guid: string
 ```
 
-/api/route/favorite
-```
+Returns:
+HTTP status 200
+
+#### /api/route/favorite
+
+Parameters:
+
+```Rust
 user_guid: string
 route_number: i32
 alert_on_railway_works: bool
 alert_on_delay: i32?
 ```
+
+Returns:
+HTTP status 200

@@ -1,5 +1,4 @@
 use serde::{de, Deserialize, Deserializer, Serialize};
-use std::str::FromStr;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HzppRoute {
@@ -71,9 +70,9 @@ where
 {
     let s: String = Deserialize::deserialize(deserializer)?;
 
-    let res: anyhow::Result<(u8, u8)> = try {
-        let hour: u8 = String::from_str(&s[0..=1])?.parse()?;
-        let minute: u8 = String::from_str(&s[3..=4])?.parse()?;
+    let res = try {
+        let hour: u8 = s[0..=1].parse()?;
+        let minute: u8 = s[3..=4].parse()?;
 
         (hour, minute)
     };

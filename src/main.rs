@@ -5,7 +5,7 @@ use axum::Router;
 use axum::routing::get;
 use background_services::data_fetcher::get_todays_data;
 use background_services::delay_checker::check_delays;
-use clap::{Parser, Subcommand, command};
+use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
 use model::db_model::RouteDb;
 use opentelemetry::trace::TracerProvider;
